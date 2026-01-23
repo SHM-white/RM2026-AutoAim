@@ -37,7 +37,7 @@ DM_IMU::~DM_IMU()
 void DM_IMU::init_serial()
 {
   try {
-    serial_.setPort("/dev/ttyACM0");
+    serial_.setPort("/dev/ttyACM1");
     serial_.setBaudrate(921600);
     serial_.setFlowcontrol(serial::flowcontrol_none);
     serial_.setParity(serial::parity_none);  //default is parity_none
@@ -59,19 +59,34 @@ void DM_IMU::init_serial()
 
 void DM_IMU::get_imu_data_thread()
 {
+  uint8_t header[4];
   while (!stop_thread_) {
     if (!serial_.isOpen()) {
       tools::logger()->warn("In get_imu_data_thread,imu serial port unopen");
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      continue;
     }
 
-    serial_.read((uint8_t *)(&receive_data.FrameHeader1), 4);
+    try {
+      // 逐字节读取寻找帧头 0x55
+      if (serial_.read(header, 1) != 1) continue;
+      if (header[0] != 0x55) continue;
 
-    if (
-      receive_data.FrameHeader1 == 0x55 && receive_data.flag1 == 0xAA &&
-      receive_data.slave_id1 == 0x01 && receive_data.reg_acc == 0x01)
+      // 读取后续3字节校验头部
+      if (serial_.read(header + 1, 3) != 3) continue;
 
-    {
-      serial_.read((uint8_t *)(&receive_data.accx_u32), 57 - 4);
+      if (header[1] != 0xAA || header[2] != 0x9B || header[3] != 0x01) {
+        continue;
+      }
+
+      // 头部校验通过，填充结构体
+      receive_data.FrameHeader1 = header[0];
+      receive_data.flag1 = header[1];
+      receive_data.slave_id1 = header[2];
+      receive_data.reg_acc = header[3];
+
+      // 读取剩余数据 (57 - 4 = 53 bytes)
+      if (serial_.read((uint8_t *)(&receive_data.accx_u32), 53) != 53) continue;
 
       if (tools::get_crc16((uint8_t *)(&receive_data.FrameHeader1), 16) == receive_data.crc1) {
         data.accx = *((float *)(&receive_data.accx_u32));
@@ -97,20 +112,21 @@ void DM_IMU::get_imu_data_thread()
                              Eigen::AngleAxisd(data.roll * M_PI / 180, Eigen::Vector3d::UnitX());
       q.normalize();
       queue_.push({q, timestamp});
-    } else {
-      tools::logger()->info("[DM_IMU] failed to get correct data");
+    } catch (const std::exception & e) {
+      tools::logger()->error("[DM_IMU] error: {}", e.what());
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
 }
 
 Eigen::Quaterniond DM_IMU::imu_at(std::chrono::steady_clock::time_point timestamp)
 {
-  if (data_behind_.timestamp < timestamp) data_ahead_ = data_behind_;
-
-  while (true) {
-    queue_.pop(data_behind_);
-    if (data_behind_.timestamp > timestamp) break;
-    data_ahead_ = data_behind_;
+  if (data_behind_.timestamp <= timestamp) {
+    while (true) {
+      data_ahead_ = data_behind_;
+      queue_.pop(data_behind_);
+      if (data_behind_.timestamp > timestamp) break;
+    }
   }
 
   Eigen::Quaterniond q_a = data_ahead_.q.normalized();
