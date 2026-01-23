@@ -41,4 +41,20 @@ fi
 cd ~/Downloads
 if [ ! -d "/opt/MVS"]; then
     curl -L https://www.hikrobotics.com/cn2/source/support/software/MvCamCtrlSDK_STD_V4.7.0_251113.zip --output MvCamCtrlSDK_STD_V4.7.0_251113.zip
-    unzip MvCamCtrlSDK_STD_V4.7.0_251113.zip -d MVS
+    unzip MvCamCtrlSDK_STD_V4.7.0_251113.zip -d MvCamCtrlSDK_STD
+    cd MvCamCtrlSDK_STD
+    # Get system architecture
+    arch=$(uname -m)
+    if [ "$arch" == "x86_64" ]; then
+        sudo apt install ./MvCamCtrlSDK_Runtime-4.7.0_x86_64_20251113.deb -y
+    elif [ "$arch" == "i386" ] || [ "$arch" == "i686" ]; then
+        sudo apt install ./MvCamCtrlSDK_Runtime-4.7.0_i386_20251113.deb -y
+    elif [ "$arch" == "aarch64" ]; then
+        sudo apt install ./MvCamCtrlSDK_Runtime-4.7.0_arm64_20251113.deb -y
+    elif [ "$arch" == "armv7l" ]; then
+        sudo apt install ./MvCamCtrlSDK_Runtime-4.7.0_armhf_20251113.deb -y
+    else
+        echo "Unsupported architecture: $arch"
+    fi
+    ls /opt/MVS
+fi
