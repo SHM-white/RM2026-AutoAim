@@ -87,9 +87,9 @@ void DM_IMU::get_imu_data_thread()
         data.roll = *((float *)(&receive_data.roll_u32));
         data.pitch = *((float *)(&receive_data.pitch_u32));
         data.yaw = *((float *)(&receive_data.yaw_u32));
-        // tools::logger()->debug(
-        //   "yaw: {:.2f}, pitch: {:.2f}, roll: {:.2f}", static_cast<double>(data.yaw),
-        //   static_cast<double>(data.pitch), static_cast<double>(data.roll));
+        tools::logger()->debug(
+          "yaw: {:.2f}, pitch: {:.2f}, roll: {:.2f}", static_cast<double>(data.yaw),
+          static_cast<double>(data.pitch), static_cast<double>(data.roll));
       }
       auto timestamp = std::chrono::steady_clock::now();
       Eigen::Quaterniond q = Eigen::AngleAxisd(data.yaw * M_PI / 180, Eigen::Vector3d::UnitZ()) *

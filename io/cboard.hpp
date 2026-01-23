@@ -26,6 +26,7 @@ enum Mode
 const std::vector<std::string> MODES = {"idle", "auto_aim", "small_buff", "big_buff", "outpost"};
 
 // 哨兵专有
+// 双头哨兵，我们不需要
 enum ShootMode
 {
   left_shoot,
@@ -46,7 +47,7 @@ public:
 
   Eigen::Quaterniond imu_at(std::chrono::steady_clock::time_point timestamp);
 
-  void send(Command command) const;
+  virtual void send(Command command) const;
 
 private:
   struct IMUData

@@ -12,6 +12,9 @@ double limit_rad(double angle)
   return angle;
 }
 
+// 四元数转欧拉角
+// X=0, Y=1, Z=2 
+// extrinsic表示是否为外旋
 Eigen::Vector3d eulers(Eigen::Quaterniond q, int axis0, int axis1, int axis2, bool extrinsic)
 {
   if (!extrinsic) std::swap(axis0, axis2);
@@ -73,12 +76,16 @@ Eigen::Vector3d eulers(Eigen::Quaterniond q, int axis0, int axis1, int axis2, bo
   return eulers;
 }
 
+// R转欧拉角
+// X=0, Y=1, Z=2 
+// extrinsic表示是否为外旋
 Eigen::Vector3d eulers(Eigen::Matrix3d R, int axis0, int axis1, int axis2, bool extrinsic)
 {
   Eigen::Quaterniond q(R);
   return eulers(q, axis0, axis1, axis2, extrinsic);
 }
 
+// 欧拉角转为旋转矩阵
 Eigen::Matrix3d rotation_matrix(const Eigen::Vector3d & ypr)
 {
   double roll = ypr[2];
@@ -100,6 +107,7 @@ Eigen::Matrix3d rotation_matrix(const Eigen::Vector3d & ypr)
   return R;
 }
 
+// XYZ坐标系转为 Yaw-Pitch-Distance
 Eigen::Vector3d xyz2ypd(const Eigen::Vector3d & xyz)
 {
   auto x = xyz[0], y = xyz[1], z = xyz[2];
@@ -109,6 +117,7 @@ Eigen::Vector3d xyz2ypd(const Eigen::Vector3d & xyz)
   return {yaw, pitch, distance};
 }
 
+// XYZ坐标系转为 Yaw-Pitch-Distance 的雅可比矩阵
 Eigen::MatrixXd xyz2ypd_jacobian(const Eigen::Vector3d & xyz)
 {
   auto x = xyz[0], y = xyz[1], z = xyz[2];
@@ -136,6 +145,7 @@ Eigen::MatrixXd xyz2ypd_jacobian(const Eigen::Vector3d & xyz)
   return J;
 }
 
+// Yaw-Pitch-Distance 转为 XYZ坐标系
 Eigen::Vector3d ypd2xyz(const Eigen::Vector3d & ypd)
 {
   auto yaw = ypd[0], pitch = ypd[1], distance = ypd[2];
@@ -145,6 +155,7 @@ Eigen::Vector3d ypd2xyz(const Eigen::Vector3d & ypd)
   return {x, y, z};
 }
 
+// Yaw-Pitch-Distance 转为 XYZ坐标系 的雅可比矩阵
 Eigen::MatrixXd ypd2xyz_jacobian(const Eigen::Vector3d & ypd)
 {
   auto yaw = ypd[0], pitch = ypd[1], distance = ypd[2];

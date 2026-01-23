@@ -13,6 +13,7 @@ add_library(io STATIC
     cboard.cpp
     dm_imu/dm_imu.cpp
     gimbal/gimbal.cpp
+    cboard_uart.cpp
 )
 
 # hikrobot
