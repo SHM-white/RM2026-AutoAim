@@ -3,6 +3,7 @@
 #include "tools/yaml.hpp"
 #include "tools/math_tools.hpp"
 #include "tools/crc.hpp"
+#include "io/gimbal/gimbal.hpp"
 #include <iostream>
 
 namespace io
@@ -20,19 +21,6 @@ struct SendPacket
   uint16_t checksum;
 };
 
-struct ReceivePacket
-{
-  uint8_t header;
-  int16_t w;
-  int16_t x;
-  int16_t y;
-  int16_t z;
-  int16_t bullet_speed;
-  uint8_t mode;
-  uint8_t shoot_mode;
-  int16_t ft_angle;
-  uint16_t checksum;
-};
 #pragma pack(pop)
 
 CBoardUART::CBoardUART(const std::string & config_path)
@@ -125,7 +113,7 @@ void CBoardUART::send(Command command) const
 
 void CBoardUART::read_thread()
 {
-  const size_t PACKET_SIZE = sizeof(ReceivePacket);
+  const size_t PACKET_SIZE = sizeof(GimbalToVision);
   uint8_t buffer[PACKET_SIZE];
   
   while (!stop_thread_) {
@@ -135,58 +123,66 @@ void CBoardUART::read_thread()
          continue;
       }
 
-      // Read header byte
-      uint8_t header;
-      if (serial_.read(&header, 1) != 1) {
-          continue;
-      }
+      // Read header bytes: 'S', 'P'
+      uint8_t header[2];
+      if (serial_.read(header, 1) != 1) continue;
+      if (header[0] != 'S') continue;
+      
+      if (serial_.read(header + 1, 1) != 1) continue;
+      if (header[1] != 'P') continue;
 
-      if (header == 0xA5) { // Valid header
-         buffer[0] = header;
-         // Read rest of the packet
-         size_t read_len = serial_.read(buffer + 1, PACKET_SIZE - 1);
-         if (read_len == PACKET_SIZE - 1) {
-             ReceivePacket* pkt = reinterpret_cast<ReceivePacket*>(buffer);
+      buffer[0] = 'S';
+      buffer[1] = 'P';
+      
+      // Read rest of the packet
+      if (serial_.read(buffer + 2, PACKET_SIZE - 2) == PACKET_SIZE - 2) {
+         GimbalToVision* pkt = reinterpret_cast<GimbalToVision*>(buffer);
+         
+         // Verify CRC
+         uint16_t cal_crc = tools::get_crc16(buffer, PACKET_SIZE - 2);
+         if (cal_crc == pkt->crc16) {
+             auto timestamp = std::chrono::steady_clock::now();
              
-             // Verify CRC
-             uint16_t cal_crc = tools::get_crc16(buffer, PACKET_SIZE - 2);
-             if (cal_crc == pkt->checksum) {
-                 auto timestamp = std::chrono::steady_clock::now();
-                 
-                 // Process Quaternion
-                 double w = pkt->w / 1e4;
-                 double x = pkt->x / 1e4;
-                 double y = pkt->y / 1e4;
-                 double z = pkt->z / 1e4;
-                 
-                 // Validate quaternion
-                 if (std::abs(w * w + x * x + y * y + z * z - 1) < 1e-2) {
-                     queue_.push({{w, x, y, z}, timestamp});
-                 } else {
-                     tools::logger()->warn("[CBoardUART] Invalid quaternion received");
-                 }
-                 
-                 // Process State
-                 bullet_speed = pkt->bullet_speed / 100.0;
-                 if (pkt->mode < MODES.size()) mode = static_cast<Mode>(pkt->mode);
-                 if (pkt->shoot_mode < SHOOT_MODES.size()) shoot_mode = static_cast<ShootMode>(pkt->shoot_mode);
-                 ft_angle = pkt->ft_angle / 1e4;
+             // Process Quaternion
+             double w = pkt->q[0];
+             double x = pkt->q[1];
+             double y = pkt->q[2];
+             double z = pkt->q[3];
+             
+             // Validate quaternion
+             if (std::abs(w * w + x * x + y * y + z * z - 1) < 1e-2) {
+                 queue_.push({{w, x, y, z}, timestamp});
+             } else {
+                 tools::logger()->warn("[CBoardUART] Invalid quaternion received");
+             }
+             
+             // Process State
+             bullet_speed = pkt->bullet_speed;
+             
+             // Map packet mode to internal Mode
+             switch (pkt->mode) {
+                 case 0: mode = Mode::idle; break;
+                 case 1: mode = Mode::auto_aim; break;
+                 case 2: mode = Mode::small_buff; break;
+                 case 3: mode = Mode::big_buff; break;
+                 default: mode = Mode::idle; break;
+             }
+             
+             // GimbalToVision does not have shoot_mode or ft_angle, so we cannot update them.
 
                  // Log occasionally
-                 static auto last_log = std::chrono::steady_clock::time_point::min();
-                 if (bullet_speed > 0 && tools::delta_time(timestamp, last_log) >= 1.0) {
-                    std::string mode_str = (mode < MODES.size()) ? MODES[mode] : "Unknown";
-                    std::string shoot_mode_str = (shoot_mode < SHOOT_MODES.size()) ? SHOOT_MODES[shoot_mode] : "Unknown";
-                    
-                    tools::logger()->info(
-                        "[CBoardUART] Speed: {:.2f}, Mode: {}, Shoot: {}, FT: {:.2f}",
-                        bullet_speed, mode_str, shoot_mode_str, ft_angle);
-                    last_log = timestamp;
-                 }
-
-             } else {
-                 tools::logger()->warn("[CBoardUART] CRC mismatch");
+             static auto last_log = std::chrono::steady_clock::time_point::min();
+             if (bullet_speed > 0 && tools::delta_time(timestamp, last_log) >= 1.0) {
+                std::string mode_str = (mode < MODES.size()) ? MODES[mode] : "Unknown";
+                
+                tools::logger()->info(
+                    "[CBoardUART] Speed: {:.2f}, Mode: {}",
+                    bullet_speed, mode_str);
+                last_log = timestamp;
              }
+
+         } else {
+             tools::logger()->warn("[CBoardUART] CRC mismatch");
          }
       }
     } catch (const std::exception & e) {
@@ -195,6 +191,4 @@ void CBoardUART::read_thread()
     }
   }
 }
-
 }  // namespace io
-
