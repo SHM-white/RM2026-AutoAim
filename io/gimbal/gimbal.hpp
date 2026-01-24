@@ -11,6 +11,7 @@
 
 #include "serial/serial.h"
 #include "tools/thread_safe_queue.hpp"
+#include "io/command.hpp"
 
 namespace io
 {

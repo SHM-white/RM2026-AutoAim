@@ -112,7 +112,7 @@ void DM_IMU::get_imu_data_thread()
                              Eigen::AngleAxisd(data.roll * M_PI / 180, Eigen::Vector3d::UnitX());
       q.normalize();
       queue_.push({q, timestamp});
-    } catch (const std::exception & e) {
+    } catch (const std::exception & e) { 
       tools::logger()->error("[DM_IMU] error: {}", e.what());
       std::this_thread::sleep_for(std::chrono::seconds(1));
     }
