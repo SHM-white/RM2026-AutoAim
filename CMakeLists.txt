@@ -19,6 +19,7 @@ include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
 
+add_subdirectory(sp_msgs)
 
 add_subdirectory(tools)
 add_subdirectory(io)

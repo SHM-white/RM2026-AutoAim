@@ -15,16 +15,19 @@ apt install -y \
     googletest \
     libceres-dev
 
-if [ ! -d "~/Downloads" ]; then
-        mkdir ~/Downloads
+# Get user Downloads directory
+DOWNLOADS_DIR="$HOME/Downloads"
+
+if [ ! -d "$DOWNLOADS_DIR" ]; then
+        mkdir -p "$DOWNLOADS_DIR"
     fi
 
 if [ ! -d "/opt/intel/openvino_2024" ]; then
     mkdir -p /opt/intel
-    if [ ! -d "~/Downloads" ]; then
-        mkdir ~/Downloads
+    if [ ! -d "$DOWNLOADS_DIR" ]; then
+        mkdir -p "$DOWNLOADS_DIR"
     fi
-    cd ~/Downloads
+    cd "$DOWNLOADS_DIR"
     # Get Ubuntu major version
     ubuntu_version=$(lsb_release -rs | cut -d. -f1)
     curl -L https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/linux/l_openvino_toolkit_ubuntu${ubuntu_version}_2024.6.0.17404.4c0f47d2335_x86_64.tgz --output openvino_2024.6.0.tgz
@@ -38,7 +41,7 @@ if [ ! -d "/opt/intel/openvino_2024" ]; then
     sudo ln -s openvino_2024.6.0 openvino_2024
 fi
 
-cd ~/Downloads
+cd "$DOWNLOADS_DIR"
 if [ ! -d "/opt/MVS"]; then
     curl -L https://www.hikrobotics.com/cn2/source/support/software/MvCamCtrlSDK_STD_V4.7.0_251113.zip --output MvCamCtrlSDK_STD_V4.7.0_251113.zip
     unzip MvCamCtrlSDK_STD_V4.7.0_251113.zip -d MvCamCtrlSDK_STD
