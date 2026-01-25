@@ -17,7 +17,7 @@ const std::string keys =
 
 double yaw_cal(double t)
 {
-  double A = 90;  // Amplitude (radians)
+  double A = 135;  // Amplitude (radians)
   double T = 5.0;  // Period (seconds)
 
   return A * std::sin(2 * M_PI * t / T);
@@ -25,9 +25,9 @@ double yaw_cal(double t)
 
 double pitch_cal(double t)
 {
-  double A = 30;
+  double A = 45;
   double T = 5.0;
-  return A * std::sin(2 * M_PI * t / T) + 18;
+  return A * std::sin(2 * M_PI * t / T);
 }
 
 bool shoot_cal(double t)
