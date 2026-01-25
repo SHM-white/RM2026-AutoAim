@@ -37,7 +37,7 @@ DM_IMU::~DM_IMU()
 void DM_IMU::init_serial()
 {
   try {
-    serial_.setPort("/dev/ttyACM1");
+    serial_.setPort("/dev/ttyACM0");
     serial_.setBaudrate(921600);
     serial_.setFlowcontrol(serial::flowcontrol_none);
     serial_.setParity(serial::parity_none);  //default is parity_none
@@ -88,17 +88,17 @@ void DM_IMU::get_imu_data_thread()
       // 读取剩余数据 (57 - 4 = 53 bytes)
       if (serial_.read((uint8_t *)(&receive_data.accx_u32), 53) != 53) continue;
 
-      if (tools::get_crc16((uint8_t *)(&receive_data.FrameHeader1), 16) == receive_data.crc1) {
+      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader1), 16) == receive_data.crc1) {
         data.accx = *((float *)(&receive_data.accx_u32));
         data.accy = *((float *)(&receive_data.accy_u32));
         data.accz = *((float *)(&receive_data.accz_u32));
       }
-      if (tools::get_crc16((uint8_t *)(&receive_data.FrameHeader2), 16) == receive_data.crc2) {
+      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader2), 16) == receive_data.crc2) {
         data.gyrox = *((float *)(&receive_data.gyrox_u32));
         data.gyroy = *((float *)(&receive_data.gyroy_u32));
         data.gyroz = *((float *)(&receive_data.gyroz_u32));
       }
-      if (tools::get_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3) {
+      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3) {
         data.roll = *((float *)(&receive_data.roll_u32));
         data.pitch = *((float *)(&receive_data.pitch_u32));
         data.yaw = *((float *)(&receive_data.yaw_u32));

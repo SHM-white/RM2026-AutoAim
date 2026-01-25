@@ -5,6 +5,7 @@
 #include "tools/exiter.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
+#include "tools/plotter.hpp"
 
 using namespace std::chrono_literals;
 
@@ -22,7 +23,10 @@ int main()
 
     Eigen::Vector3d eulers = tools::eulers(q, 2, 1, 0) * 57.3;
     tools::logger()->info("z{:.2f} y{:.2f} x{:.2f} degree", eulers[0], eulers[1], eulers[2]);
-  }
+    tools::Plotter()->plot("yaw", eulers[0]);
+    tools::Plotter()->plot("pitch", eulers[1]);
+    tools::Plotter()->plot("roll", eulers[2]);
+  } 
 
   return 0;
 }
