@@ -13,8 +13,12 @@ int main()
 {
   tools::Exiter exiter;
   io::DM_IMU imu;
+  tools::Plotter plotter;
+
+  auto start_time = std::chrono::steady_clock::now();
 
   while (!exiter.exit()) {
+    nlohmann::json data;
     auto timestamp = std::chrono::steady_clock::now();
 
     std::this_thread::sleep_for(1ms);
@@ -23,9 +27,11 @@ int main()
 
     Eigen::Vector3d eulers = tools::eulers(q, 2, 1, 0) * 57.3;
     tools::logger()->info("z{:.2f} y{:.2f} x{:.2f} degree", eulers[0], eulers[1], eulers[2]);
-    tools::Plotter()->plot("yaw", eulers[0]);
-    tools::Plotter()->plot("pitch", eulers[1]);
-    tools::Plotter()->plot("roll", eulers[2]);
+    data["t"] = tools::delta_time(timestamp, start_time);
+    data["imu_yaw"] = eulers[0];
+    data["imu_pitch"] = eulers[1];
+    data["imu_roll"] = eulers[2];
+    plotter.plot(data);
   } 
 
   return 0;
