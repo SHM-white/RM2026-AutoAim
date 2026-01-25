@@ -15,7 +15,8 @@
 
 namespace io
 {
-struct __attribute__((packed)) GimbalToVision
+#pragma pack(push, 1)
+struct  GimbalToVision
 {
   uint8_t head[2] = {'S', 'P'};
   uint8_t mode;  // 0: 空闲, 1: 自瞄, 2: 小符, 3: 大符
@@ -28,10 +29,11 @@ struct __attribute__((packed)) GimbalToVision
   uint16_t bullet_count;  // 子弹累计发送次数
   uint16_t crc16;
 };
-
+#pragma pack(pop)
 static_assert(sizeof(GimbalToVision) <= 64);
 
-struct __attribute__((packed)) VisionToGimbal
+#pragma pack(push, 1)
+struct VisionToGimbal
 {
   uint8_t head[2] = {'S', 'P'};
   uint8_t mode;  // 0: 不控制, 1: 控制云台但不开火，2: 控制云台且开火
@@ -43,6 +45,7 @@ struct __attribute__((packed)) VisionToGimbal
   float pitch_acc;
   uint16_t crc16;
 };
+#pragma pack(pop)
 
 static_assert(sizeof(VisionToGimbal) <= 64);
 

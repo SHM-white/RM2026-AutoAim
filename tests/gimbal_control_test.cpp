@@ -25,7 +25,7 @@ double yaw_cal(double t)
 
 double pitch_cal(double t)
 {
-  double A = 10;
+  double A = 30;
   double T = 5.0;
   return A * std::sin(2 * M_PI * t / T) + 18;
 }
