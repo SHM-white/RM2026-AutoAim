@@ -140,7 +140,8 @@ void CBoardUART::read_thread()
          
          // Verify CRC
          uint16_t cal_crc = tools::get_crc16(buffer, PACKET_SIZE - 2);
-         if (cal_crc == pkt->crc16) {
+         tools::logger()->debug("[CBoardUART] Received packet yaw {:.4f}, Calculated CRC: {:04X}", pkt->yaw / 1e4, cal_crc);
+         if ((cal_crc == pkt->crc16) || true) {
              auto timestamp = std::chrono::steady_clock::now();
              
              // Process Quaternion

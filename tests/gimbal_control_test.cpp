@@ -13,14 +13,20 @@ using namespace std::chrono_literals;
 
 const std::string keys =
   "{help h usage ? |                     | usage}"
-  "{@config-path   | configs/sentry.yaml | config path}";
+  "{@config-path   | configs/test2.yaml | config path}";
 
 double yaw_cal(double t)
 {
-  double A = 0.5;  // Amplitude (radians)
-  double T = 2.0;  // Period (seconds)
+  double A = 90;  // Amplitude (radians)
+  double T = 2000.0;  // Period (seconds)
 
   return A * std::sin(2 * M_PI * t / T);
+}
+
+bool shoot_cal(double t)
+{
+  double shoot_interval = 5000.0;  // seconds
+  return std::fmod(t, shoot_interval) < 2000;
 }
 
 int main(int argc, char * argv[])
@@ -56,9 +62,9 @@ int main(int argc, char * argv[])
     double t = tools::delta_time(now, start_time);
 
     // Calculate yaw
-    command.yaw = yaw_cal(t);
+    command.yaw = 25;
     command.pitch = 0.0;
-
+    command.shoot = shoot_cal(t);
     // Send command
     cboard.send(command);
 
