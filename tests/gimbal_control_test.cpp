@@ -23,6 +23,13 @@ double yaw_cal(double t)
   return A * std::sin(2 * M_PI * t / T);
 }
 
+double pitch_cal(double t)
+{
+  double A = 10;
+  double T = 5.0;
+  return A * std::sin(2 * M_PI * t / T) + 18;
+}
+
 bool shoot_cal(double t)
 {
   double shoot_interval = 5.0;  // seconds
@@ -63,7 +70,7 @@ int main(int argc, char * argv[])
 
     // Calculate yaw
     command.yaw = yaw_cal(t) / 57.3;
-    command.pitch = 0.0;
+    command.pitch = pitch_cal(t) / 57.3;
     command.shoot = shoot_cal(t);
     //tools::logger()->debug("t: {:.2f}, shoot: {}", t, command.shoot);
     // Send command
