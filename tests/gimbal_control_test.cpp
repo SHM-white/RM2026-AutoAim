@@ -18,15 +18,15 @@ const std::string keys =
 double yaw_cal(double t)
 {
   double A = 90;  // Amplitude (radians)
-  double T = 2000.0;  // Period (seconds)
+  double T = 5.0;  // Period (seconds)
 
   return A * std::sin(2 * M_PI * t / T);
 }
 
 bool shoot_cal(double t)
 {
-  double shoot_interval = 5000.0;  // seconds
-  return std::fmod(t, shoot_interval) < 2000;
+  double shoot_interval = 5.0;  // seconds
+  return std::fmod(t, shoot_interval) < 2;
 }
 
 int main(int argc, char * argv[])
@@ -62,9 +62,10 @@ int main(int argc, char * argv[])
     double t = tools::delta_time(now, start_time);
 
     // Calculate yaw
-    command.yaw = 25;
+    command.yaw = yaw_cal(t) / 57.3;
     command.pitch = 0.0;
     command.shoot = shoot_cal(t);
+    //tools::logger()->debug("t: {:.2f}, shoot: {}", t, command.shoot);
     // Send command
     cboard.send(command);
 
