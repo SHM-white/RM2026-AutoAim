@@ -124,7 +124,7 @@ void CBoardUART::read_thread()
   tools::Plotter plotter;
   nlohmann::json plot_json;
 #endif
-  
+  auto start_time = std::chrono::steady_clock::now();
   while (!stop_thread_) {
     try {
       if (!serial_.isOpen()) {
@@ -158,8 +158,7 @@ void CBoardUART::read_thread()
         );
 #ifndef NDEBUG
           // For debugging: plot received data
-          plot_json["timestamp"] = std::chrono::duration<double>(
-              std::chrono::steady_clock::now().time_since_epoch()).count();
+          plot_json["timestamp"] = tools::delta_time(std::chrono::steady_clock::now(), start_time);
           plot_json["yaw"] = static_cast<double>(pkt->yaw) * 57.3;
           plot_json["pitch"] = static_cast<double>(pkt->pitch) * 57.3;
           //plot_json["bullet_speed"] = pkt->bullet_speed;
