@@ -8,6 +8,7 @@
 #include "io/command.hpp"
 #include "tools/exiter.hpp"
 #include "tools/math_tools.hpp"
+#include "tools/plotter.hpp"
 
 using namespace std::chrono_literals;
 
@@ -17,8 +18,8 @@ const std::string keys =
 
 double yaw_cal(double t)
 {
-  double A = 135;  // Amplitude (radians)
-  double T = 5.0;  // Period (seconds)
+  double A = 120;  // Amplitude (radians)
+  double T = 2.5;  // Period (seconds)
 
   return A * std::sin(2 * M_PI * t / T);
 }
@@ -38,6 +39,7 @@ bool shoot_cal(double t)
 
 int main(int argc, char * argv[])
 {
+  auto plotter = tools::Plotter{};
   cv::CommandLineParser cli(argc, argv, keys);
   auto config_path = cli.get<std::string>(0);
 
@@ -69,8 +71,9 @@ int main(int argc, char * argv[])
     double t = tools::delta_time(now, start_time);
 
     // Calculate yaw
-    command.yaw = yaw_cal(t) / 57.3;
-    command.pitch = pitch_cal(t) / 57.3;
+    command.control = true;
+    command.yaw = 10 / 57.3;
+    command.pitch = 10 / 57.3;
     command.shoot = shoot_cal(t);
     //tools::logger()->debug("t: {:.2f}, shoot: {}", t, command.shoot);
     // Send command

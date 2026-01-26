@@ -6,6 +6,11 @@
 #include "io/gimbal/gimbal.hpp"
 #include <iostream>
 
+#ifndef NDEBUG
+#include "tools/plotter.hpp"
+
+#endif
+
 namespace io
 {
 
@@ -115,6 +120,10 @@ void CBoardUART::read_thread()
 {
   const size_t PACKET_SIZE = sizeof(GimbalToVision);
   uint8_t buffer[PACKET_SIZE];
+#ifndef NDEBUG
+  tools::Plotter plotter;
+  nlohmann::json plot_json;
+#endif
   
   while (!stop_thread_) {
     try {
@@ -140,7 +149,22 @@ void CBoardUART::read_thread()
          
          // Verify CRC
          uint16_t cal_crc = tools::get_crc16(buffer, PACKET_SIZE - 2);
-         tools::logger()->debug("[CBoardUART] Received packet yaw {:.4f}, pitch {:.4f}, Calculated CRC: {:04X}", (float)(pkt->yaw), (float)(pkt->pitch), cal_crc);
+         tools::logger()->debug("[CBoardUART] Received packet yaw {:.4f}, pitch {:.4f}, Calculated CRC: {:04X}, Recived CRC: {:04X}, CRC Passed: {}", 
+          (float)(pkt->yaw) * 57.3, 
+          (float)(pkt->pitch) * 57.3, 
+          cal_crc, 
+          (uint16_t)(pkt->crc16), 
+          (uint16_t)(pkt->crc16) == cal_crc
+        );
+#ifndef NDEBUG
+          // For debugging: plot received data
+          plot_json["timestamp"] = std::chrono::duration<double>(
+              std::chrono::steady_clock::now().time_since_epoch()).count();
+          plot_json["yaw"] = static_cast<double>(pkt->yaw) * 57.3;
+          plot_json["pitch"] = static_cast<double>(pkt->pitch) * 57.3;
+          //plot_json["bullet_speed"] = pkt->bullet_speed;
+          plotter.plot(plot_json);
+#endif
          if ((cal_crc == pkt->crc16) || true) {
              auto timestamp = std::chrono::steady_clock::now();
              
