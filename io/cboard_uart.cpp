@@ -167,11 +167,19 @@ void CBoardUART::read_thread()
          if ((cal_crc == pkt->crc16) || true) {
              auto timestamp = std::chrono::steady_clock::now();
              
-             // Process Quaternion
-             double w = pkt->q[0];
-             double x = pkt->q[1];
-             double y = pkt->q[2];
-             double z = pkt->q[3];
+             // Process Quaternion from yaw and pitch (roll = 0)
+             double pitch = pkt->pitch;
+             double yaw = pkt->yaw;
+             
+             double cy = std::cos(yaw * 0.5);
+             double sy = std::sin(yaw * 0.5);
+             double cp = std::cos(pitch * 0.5);
+             double sp = std::sin(pitch * 0.5);
+             
+             double w = cp * cy;
+             double x = -sp * sy;
+             double y = sp * cy;
+             double z = cp * sy;
              
              // Validate quaternion
              if (std::abs(w * w + x * x + y * y + z * z - 1) < 1e-2) {
