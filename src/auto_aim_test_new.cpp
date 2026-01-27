@@ -42,7 +42,7 @@ int main(int argc, char * argv[])
   io::CBoardUART cboard(config_path);
   
   // Use DM_IMU for receiving quaternion
-  io::DM_IMU imu;
+  // io::DM_IMU imu;
 
   io::Camera camera(config_path);
 
@@ -75,8 +75,8 @@ int main(int argc, char * argv[])
       io::Command cmd;
       cmd.control = plan.control;
       cmd.shoot = plan.fire;
-      cmd.yaw = plan.yaw - 90 / 57.3;  // Adjust for any gimbal offset
-      cmd.pitch = -plan.pitch;
+      cmd.yaw = plan.yaw;  // Adjust for any gimbal offset
+      cmd.pitch = plan.pitch;
       // Other fields in cmd (like horizon_distance) are default 0 or ignored if not used by firmware
       
       cboard.send(cmd);
@@ -113,8 +113,8 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = plan.fire ? 1 : 0;
-      data["control"] = plan.control ? 1 : 0;
+      data["fire"] = plan.fire ? 10 : 0;
+      data["control"] = cmd.control ? 10 : 0;
 
       if (target.has_value()) {
         data["target_z"] = target->ekf_x()[4];   //z
@@ -140,18 +140,18 @@ int main(int argc, char * argv[])
     // 由于IMU横着装，需要应用旋转变换来校正坐标系
     // 如果IMU X轴指向右侧，使用 +M_PI / 2
     // 如果IMU X轴指向左侧，使用 -M_PI / 2
-    Eigen::Quaterniond q = imu.imu_at(t);
-    Eigen::Quaterniond q_adjusted = q * Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitZ());
-    q_adjusted.normalize();
+    Eigen::Quaterniond q = cboard.imu_at(t);
+    // Eigen::Quaterniond q_adjusted = q * Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitZ());
+    // q_adjusted.normalize();
 
-    auto adjusted_eulers = tools::eulers(q_adjusted, 2, 1, 0);  // For debugging
+    auto eulers = tools::eulers(q, 2, 1, 0);  // For debugging
     nlohmann::json data;
-    data["imu_roll"] = adjusted_eulers[0] * 57.3;
-    data["imu_pitch"] = adjusted_eulers[1] * 57.3;
-    data["imu_yaw"] = adjusted_eulers[2] * 57.3;
+    data["imu_roll"] = eulers[0] * 57.3;
+    data["imu_pitch"] = eulers[1] * 57.3;
+    data["imu_yaw"] = eulers[2] * 57.3;
     plotter.plot(data);
 
-    solver.set_R_gimbal2world(q_adjusted);
+    solver.set_R_gimbal2world(q);
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
     if (!targets.empty())
