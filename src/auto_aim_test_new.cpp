@@ -75,8 +75,8 @@ int main(int argc, char * argv[])
       io::Command cmd;
       cmd.control = plan.control;
       cmd.shoot = plan.fire;
-      cmd.yaw = plan.yaw;
-      cmd.pitch = plan.pitch;
+      cmd.yaw = plan.yaw - 90 / 57.3;  // Adjust for any gimbal offset
+      cmd.pitch = -plan.pitch;
       // Other fields in cmd (like horizon_distance) are default 0 or ignored if not used by firmware
       
       cboard.send(cmd);
@@ -105,15 +105,16 @@ int main(int argc, char * argv[])
       data["target_yaw"] = plan.target_yaw;
       data["target_pitch"] = plan.target_pitch;
 
-      data["plan_yaw"] = plan.yaw;
+      data["plan_yaw"] = plan.yaw * 57.3;
       data["plan_yaw_vel"] = plan.yaw_vel;
       data["plan_yaw_acc"] = plan.yaw_acc;
 
-      data["plan_pitch"] = plan.pitch;
+      data["plan_pitch"] = plan.pitch * 57.3;
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
       data["fire"] = plan.fire ? 1 : 0;
+      data["control"] = plan.control ? 1 : 0;
 
       if (target.has_value()) {
         data["target_z"] = target->ekf_x()[4];   //z
@@ -136,9 +137,21 @@ int main(int argc, char * argv[])
     camera.read(img, t);
     
     // Get quaternion from DM_IMU
+    // 由于IMU横着装，需要应用旋转变换来校正坐标系
+    // 如果IMU X轴指向右侧，使用 +M_PI / 2
+    // 如果IMU X轴指向左侧，使用 -M_PI / 2
     Eigen::Quaterniond q = imu.imu_at(t);
+    Eigen::Quaterniond q_adjusted = q * Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitZ());
+    q_adjusted.normalize();
 
-    solver.set_R_gimbal2world(q);
+    auto adjusted_eulers = tools::eulers(q_adjusted, 2, 1, 0);  // For debugging
+    nlohmann::json data;
+    data["imu_roll"] = adjusted_eulers[0] * 57.3;
+    data["imu_pitch"] = adjusted_eulers[1] * 57.3;
+    data["imu_yaw"] = adjusted_eulers[2] * 57.3;
+    plotter.plot(data);
+
+    solver.set_R_gimbal2world(q_adjusted);
     auto armors = yolo.detect(img);
     auto targets = tracker.track(armors, t);
     if (!targets.empty())
@@ -153,7 +166,7 @@ int main(int argc, char * argv[])
       for (const Eigen::Vector4d & xyza : armor_xyza_list) {
         auto image_points =
           solver.reproject_armor(xyza.head(3), xyza[3], target.armor_type, target.name);
-        tools::draw_points(img, image_points, {0, 255, 0});
+        tools::draw_points(img, image_points, {255, 255, 0});
       }
 
       Eigen::Vector4d aim_xyza = planner.debug_xyza;
