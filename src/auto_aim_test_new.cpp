@@ -67,7 +67,7 @@ int main(int argc, char * argv[])
       auto target = target_queue.front();
       
       // Get bullet speed from cboard
-      double bullet_speed = cboard.bullet_speed;
+      double bullet_speed = 5.0;
       
       auto plan = planner.plan(target, bullet_speed);
 

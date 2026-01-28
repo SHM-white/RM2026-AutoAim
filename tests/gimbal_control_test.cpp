@@ -18,8 +18,8 @@ const std::string keys =
 
 double yaw_cal(double t)
 {
-  double A = 30;  // Amplitude (radians)
-  double T = 2.5;  // Period (seconds)
+  double A = 120;  // Amplitude (radians)
+  double T = 4;  // Period (seconds)
 
   return A * std::sin(2 * M_PI * t / T);
 
@@ -79,9 +79,9 @@ int main(int argc, char * argv[])
     // Calculate yaw
     command.control = true;
     command.yaw = yaw_cal(t) / 57.3;
-    command.pitch = pitch_cal(t) / 57.3;
+    // command.pitch = pitch_cal(t) / 57.3;
     // command.yaw = 0 / 57.3;
-    // command.pitch = 0 / 57.3;
+    command.pitch = 0 / 57.3;
 
     command.shoot = shoot_cal(t);
     
