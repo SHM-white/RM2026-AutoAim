@@ -18,12 +18,14 @@ namespace io
 struct SendPacket
 {
   uint8_t header = 0xA5;
+  uint8_t length = sizeof(SendPacket);
   uint8_t control;
   uint8_t shoot;
   int16_t yaw;
   int16_t pitch;
   int16_t dist;
   uint16_t checksum;
+  uint16_t tail = 0x7891;
 };
 
 #pragma pack(pop)
