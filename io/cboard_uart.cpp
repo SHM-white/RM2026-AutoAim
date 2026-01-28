@@ -15,6 +15,7 @@ namespace io
 {
 
 #pragma pack(push, 1)
+#ifdef NEW_UART_PROTOCOL
 struct SendPacket
 {
   uint8_t header = 0xA5;
@@ -27,6 +28,18 @@ struct SendPacket
   uint16_t checksum;
   uint16_t tail = 0x7891;
 };
+#else
+struct SendPacket
+{
+  uint8_t header = 0xA5;
+  uint8_t control;
+  uint8_t shoot;
+  int16_t yaw;
+  int16_t pitch;
+  int16_t dist;
+  uint16_t checksum;
+};
+#endif
 
 #pragma pack(pop)
 
@@ -108,8 +121,11 @@ void CBoardUART::send(Command command) const
   packet.dist = static_cast<int16_t>(command.horizon_distance * 1e4);
   
   // Calculate CRC (exclude checksum field itself)
+#ifdef NEW_UART_PROTOCOL
   packet.checksum = tools::get_crc16(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet) - 4);
-
+#else
+  packet.checksum = tools::get_crc16(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet) - 2);
+#endif
   try {
      // Serial write is thread-safe generally, but cast is needed if member is not mutable
      const_cast<serial::Serial&>(serial_).write(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
