@@ -108,7 +108,7 @@ void CBoardUART::send(Command command) const
   packet.dist = static_cast<int16_t>(command.horizon_distance * 1e4);
   
   // Calculate CRC (exclude checksum field itself)
-  packet.checksum = tools::get_crc16(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet) - 2);
+  packet.checksum = tools::get_crc16(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet) - 4);
 
   try {
      // Serial write is thread-safe generally, but cast is needed if member is not mutable
