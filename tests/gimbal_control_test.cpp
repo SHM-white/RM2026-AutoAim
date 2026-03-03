@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cmath>
+#include <algorithm>
 #include <iostream>
 #include <thread>
 #include <opencv2/opencv.hpp>
@@ -24,38 +25,46 @@ struct TrajectoryState
   double acc;
 };
 
-TrajectoryState yaw_cal(double t)
+double yaw_cal(double t)
 {
-  // double A = 120;  // Amplitude (degree)
+  double A = 120;  // Amplitude (degree)
   double T = 4;  // Period (seconds)
   double w = 2 * M_PI / T;
 
-  // return {
-  //   A * std::sin(w * t),
-  //   A * w * std::cos(w * t),
-  //   -A * w * w * std::sin(w * t)
-  // };
+  return A * std::sin(w * t);
 
   // circle motion
   
-  return{ 
-    std::fmod((360.0 / T) * t, 360.0) - 180.0, 
-    360.0 / T, 
-    0 
-  };
+  // return{ 
+  //   std::fmod((360.0 / T) * t, 360.0) - 180.0, 
+  //   360.0 / T, 
+  //   0 
+  // };
 
 }
 
-TrajectoryState pitch_cal(double t)
+double pitch_cal(double t)
 {
   double A = 30;
   double T = 5.0;
   double w = 2 * M_PI / T;
-  return {
-    A * std::sin(w * t),
-    A * w * std::cos(w * t),
-    -A * w * w * std::sin(w * t)
-  };
+  return A * std::sin(w * t);
+}
+
+TrajectoryState mpc_like_step(
+  double ref_pos, double ref_vel, double dt, double kp, double kd, double max_acc,
+  double & state_pos, double & state_vel)
+{
+  double pos_err = ref_pos - state_pos;
+  double vel_err = ref_vel - state_vel;
+
+  double acc = kp * pos_err + kd * vel_err;
+  acc = std::clamp(acc, -max_acc, max_acc);
+
+  state_vel += acc * dt;
+  state_pos += state_vel * dt;
+
+  return {state_pos, state_vel, acc};
 }
 
 bool shoot_cal(double t)
@@ -84,7 +93,7 @@ int main(int argc, char * argv[])
   std::cout << "Waiting for gimbal to zero..." << std::endl;
   io::Command init_command{true, false, 0, 0};
   gimbal.send(true, false, 0, 0, 0, 0, 0, 0);
-  std::this_thread::sleep_for(3s);
+  std::this_thread::sleep_for(0.5s);
 
   std::cout << "Starting head shaking..." << std::endl;
 
@@ -93,11 +102,44 @@ int main(int argc, char * argv[])
   command.shoot = false;
   auto start_time = std::chrono::steady_clock::now();
 
+  constexpr double dt = 0.01;  // 对齐 planner 的 DT
+  constexpr double yaw_kp = 60.0;
+  constexpr double yaw_kd = 12.0;
+  constexpr double pitch_kp = 45.0;
+  constexpr double pitch_kd = 10.0;
+  constexpr double max_yaw_acc = 50.0;    // deg/s^2
+  constexpr double max_pitch_acc = 100.0; // deg/s^2
+
+  bool initialized = false;
+  double yaw_state_pos = 0;
+  double yaw_state_vel = 0;
+  double pitch_state_pos = 0;
+  double pitch_state_vel = 0;
+
   while (!exiter.exit()) {
     auto now = std::chrono::steady_clock::now();
     double t = tools::delta_time(now, start_time);
-    auto yaw_traj = yaw_cal(t);
-    auto pitch_traj = pitch_cal(t);
+
+    double yaw_ref_pos = yaw_cal(t);
+    double pitch_ref_pos = pitch_cal(t);
+
+    double yaw_ref_vel = (yaw_cal(t + dt) - yaw_cal(t - dt)) / (2 * dt);
+    double pitch_ref_vel = (pitch_cal(t + dt) - pitch_cal(t - dt)) / (2 * dt);
+
+    if (!initialized) {
+      yaw_state_pos = yaw_ref_pos;
+      yaw_state_vel = yaw_ref_vel;
+      pitch_state_pos = pitch_ref_pos;
+      pitch_state_vel = pitch_ref_vel;
+      initialized = true;
+    }
+
+    auto yaw_traj =
+      mpc_like_step(yaw_ref_pos, yaw_ref_vel, dt, yaw_kp, yaw_kd, max_yaw_acc, yaw_state_pos, yaw_state_vel);
+    auto pitch_traj = mpc_like_step(
+      pitch_ref_pos, pitch_ref_vel, dt, pitch_kp, pitch_kd, max_pitch_acc, pitch_state_pos,
+      pitch_state_vel);
+
     // Calculate yaw
     command.control = true;
     command.yaw = yaw_traj.pos / 57.3;
