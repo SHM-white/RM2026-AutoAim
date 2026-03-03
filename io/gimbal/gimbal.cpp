@@ -145,7 +145,7 @@ void Gimbal::read_thread()
       continue;
     }
 
-    if (rx_data_.head[0] != 'S' || rx_data_.head[1] != 'P') continue;
+    if (rx_data_.head[0] != tx_data_.head[0] || rx_data_.head[1] != tx_data_.head[1]) continue;
 
     auto t = std::chrono::steady_clock::now();
 
