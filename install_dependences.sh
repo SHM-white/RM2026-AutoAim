@@ -2,6 +2,9 @@
 
 CURRENT_DIR=$(pwd)
 set -euo pipefail
+real_user="${SUDO_USER:-$USER}"
+real_home=$(getent passwd "$real_user" | cut -d: -f6)
+
 # Install core dependencies (add unzip, lsb-release, python3-pip)
 sudo apt update || true
 sudo apt install -y \
@@ -115,19 +118,25 @@ if [ ! -d "/opt/ros/humble" ]; then
     sudo apt install ros-humble-desktop-full -y
     sudo apt install ros-dev-tools -y
 
-    # WRITE source /opt/ros/humble/setup.bash to ~/.bashrc if not already present
-    if ! grep -Fxq "source /opt/ros/humble/setup.bash" ~/.bashrc; then
-        echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+    # WRITE source /opt/ros/humble/setup.bash to user's .bashrc (handling sudo)
+    if [ -n "$real_home" ] && [ -f "$real_home/.bashrc" ]; then
+        if ! grep -Fq "source /opt/ros/humble/setup.bash" "$real_home/.bashrc"; then
+            echo "" >> "$real_home/.bashrc"
+            echo "source /opt/ros/humble/setup.bash" >> "$real_home/.bashrc"
+            echo "Added ROS setup to $real_home/.bashrc"
+        else
+            echo "ROS setup already present in $real_home/.bashrc"
+        fi
     fi
 
     source /opt/ros/humble/setup.bash
     sudo apt install ros-humble-plotjuggler-ros -y
 fi
 
-mkdir "$HOME/ros_ws/src" || true
-cp ${CURRENT_DIR}/sp_msgs "$HOME/ros_ws/src/" -r
-cd "$HOME/ros_ws"
+mkdir "$real_home/ros_ws/src" || true
+cp ${CURRENT_DIR}/sp_msgs "$real_home/ros_ws/src/" -r
+cd "$real_home/ros_ws"
 source /opt/ros/humble/setup.bash || true
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
+# rosdep update
+# rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
