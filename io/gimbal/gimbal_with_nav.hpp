@@ -17,7 +17,7 @@
 
 namespace io
 {
-extern constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
+constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
 
 #pragma pack(push, 1)
 struct NavData

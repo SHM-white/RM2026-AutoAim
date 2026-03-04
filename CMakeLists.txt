@@ -128,6 +128,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_
     add_executable(subscribe_test tests/subscribe_test.cpp)
     add_executable(topic_loop_test tests/topic_loop_test.cpp)
     add_executable(nav_to_gimbal_test tests/nav_to_gimbal_test.cpp)
+    add_executable(cmd_vel_subscriber_test tests/cmd_vel_subscriber_test.cpp)
+    add_executable(cmd_vel_publisher_test tests/cmd_vel_publisher_test.cpp)
 
     target_link_libraries(sentry ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
     target_link_libraries(sentry_bp ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
@@ -137,6 +139,8 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_
     target_link_libraries(subscribe_test ${OpenCV_LIBS} fmt::fmt tools io)
     target_link_libraries(topic_loop_test ${OpenCV_LIBS} fmt::fmt tools io)
     target_link_libraries(nav_to_gimbal_test ${OpenCV_LIBS} fmt::fmt tools io auto_aim)
+    target_link_libraries(cmd_vel_subscriber_test ${OpenCV_LIBS} fmt::fmt tools io)
+    target_link_libraries(cmd_vel_publisher_test ${OpenCV_LIBS} fmt::fmt tools io)
 else()
     message(STATUS "ROS2 environment not found, skipping ROS2-related code.")
 endif()

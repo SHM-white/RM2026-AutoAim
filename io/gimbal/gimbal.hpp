@@ -16,7 +16,7 @@
 
 namespace io
 {
-extern constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
+constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
 
 #pragma pack(push, 1)
 struct GimbalToVision
