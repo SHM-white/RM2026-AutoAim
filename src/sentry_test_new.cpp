@@ -13,6 +13,7 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tasks/omniperception/decider.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -46,6 +47,7 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  omniperception::Decider decider(config_path);
 
   tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
   target_queue.push(std::nullopt);
@@ -127,7 +129,18 @@ int main(int argc, char * argv[])
 
     solver.set_R_gimbal2world(q);
     auto armors = yolo.detect(img);
+
+    // 哨兵特有的决策过滤与装甲板优先级设置逻辑
+    decider.get_invincible_armor(ros2.subscribe_enemy_status());
+    decider.armor_filter(armors);
+    decider.set_priority(armors);
+
     auto targets = tracker.track(armors, t);
+    
+    // 发送目标信息给导航
+    Eigen::Vector4d target_info = decider.get_target_info(armors, targets);
+    ros2.publish(target_info);
+
     if (!targets.empty())
       target_queue.push(targets.front());
     else
