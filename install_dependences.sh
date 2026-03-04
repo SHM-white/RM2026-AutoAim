@@ -5,6 +5,8 @@ set -euo pipefail
 real_user="${SUDO_USER:-$USER}"
 real_home=$(getent passwd "$real_user" | cut -d: -f6)
 
+sudo usermod -aG dialout $USER
+
 # Install core dependencies (add unzip, lsb-release, python3-pip)
 sudo apt update || true
 sudo apt install -y \

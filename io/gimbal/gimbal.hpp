@@ -24,6 +24,9 @@ constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
 struct NavData
 {
   uint8_t head[2] = {nav_struct_header[0], nav_struct_header[1]};
+  uint8_t mode;  // 0：正常， 1：小陀螺
+  uint8_t empty1;
+  uint8_t empty2;
   double linear_x;
   double linear_y;
   double linear_z;

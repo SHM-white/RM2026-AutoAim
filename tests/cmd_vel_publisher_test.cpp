@@ -19,7 +19,7 @@ int main(int argc, char** argv)
   std::mt19937 gen(rd());
   std::uniform_real_distribution<> dis(-10.0, 10.0);
 
-  rclcpp::WallRate rate(0.2); // 0.2 Hz means once every 5 seconds
+  rclcpp::WallRate rate(5); // 0.2 Hz means once every 5 seconds
 
   while (rclcpp::ok()) {
     geometry_msgs::msg::Twist msg;
