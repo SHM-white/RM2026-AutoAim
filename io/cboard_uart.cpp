@@ -150,16 +150,16 @@ void CBoardUART::read_thread()
          continue;
       }
 
-      // Read header bytes: 'S', 'P'
+      // Read header
       uint8_t header[2];
       if (serial_.read(header, 1) != 1) continue;
-      if (header[0] != 'S') continue;
+      if (header[0] != gimbal_struct_header[0]) continue;
       
       if (serial_.read(header + 1, 1) != 1) continue;
-      if (header[1] != 'P') continue;
+      if (header[1] != gimbal_struct_header[1]) continue;
 
-      buffer[0] = 'S';
-      buffer[1] = 'P';
+      buffer[0] = gimbal_struct_header[0];
+      buffer[1] = gimbal_struct_header[1];
       
       // Read rest of the packet
       if (serial_.read(buffer + 2, PACKET_SIZE - 2) == PACKET_SIZE - 2) {

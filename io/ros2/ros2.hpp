@@ -3,6 +3,7 @@
 
 #include "publish2nav.hpp"
 #include "subscribe2nav.hpp"
+#include "cmd_vel_subscriber.hpp"
 
 namespace io
 {
@@ -18,6 +19,8 @@ public:
   std::vector<int8_t> subscribe_enemy_status();
 
   std::vector<int8_t> subscribe_autoaim_target();
+
+  std::optional<NavData> get_last_cmd_vel_data();
 
   template <typename T>
   std::shared_ptr<rclcpp::Publisher<T>> create_publisher(
@@ -36,9 +39,11 @@ public:
 private:
   std::shared_ptr<Publish2Nav> publish2nav_;
   std::shared_ptr<Subscribe2Nav> subscribe2nav_;
+  std::shared_ptr<CmdVelSubscriber> cmd_vel_subscriber_;
 
   std::unique_ptr<std::thread> publish_spin_thread_;
   std::unique_ptr<std::thread> subscribe_spin_thread_;
+  std::unique_ptr<std::thread> cmd_vel_subscriber_spin_thread_;
 };
 
 }  // namespace io

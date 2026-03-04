@@ -83,7 +83,7 @@ public:
     value = queue_.back();
   }
 
-  bool empty()
+  bool empty() const
   {
     std::unique_lock<std::mutex> lock(mutex_);
     return queue_.empty();

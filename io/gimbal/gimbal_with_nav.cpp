@@ -5,29 +5,6 @@
 #include "tools/math_tools.hpp"
 #include "tools/yaml.hpp"
 
-#include <arpa/inet.h>
-#include <cerrno>
-#include <cstring>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-namespace
-{
-constexpr int NAV_TCP_PORT = 16667;
-
-bool recv_full(int fd, uint8_t * buffer, size_t size)
-{
-  size_t received = 0;
-  while (received < size) {
-    auto ret = recv(fd, buffer + received, size - received, 0);
-    if (ret <= 0) return false;
-    received += static_cast<size_t>(ret);
-  }
-  return true;
-}
-}  // namespace
-
 namespace io
 {
 GimbalWithNav::GimbalWithNav(const std::string & config_path)
@@ -44,7 +21,6 @@ GimbalWithNav::GimbalWithNav(const std::string & config_path)
   }
 
   thread_ = std::thread(&GimbalWithNav::read_thread, this);
-  nav_tcp_thread_ = std::thread(&GimbalWithNav::read_nav_tcp_thread, this);
 
   queue_.pop();
   tools::logger()->info("[GimbalWithNav] First q received.");
@@ -54,20 +30,7 @@ GimbalWithNav::~GimbalWithNav()
 {
   quit_ = true;
 
-  if (nav_client_fd_ >= 0) {
-    shutdown(nav_client_fd_, SHUT_RDWR);
-    close(nav_client_fd_);
-    nav_client_fd_ = -1;
-  }
-
-  if (nav_server_fd_ >= 0) {
-    shutdown(nav_server_fd_, SHUT_RDWR);
-    close(nav_server_fd_);
-    nav_server_fd_ = -1;
-  }
-
   if (thread_.joinable()) thread_.join();
-  if (nav_tcp_thread_.joinable()) nav_tcp_thread_.join();
   serial_.close();
 }
 
@@ -115,20 +78,40 @@ Eigen::Quaterniond GimbalWithNav::q(std::chrono::steady_clock::time_point t)
   }
 }
 
-void GimbalWithNav::send(io::VisionToGimbal VisionToGimbal)
+void GimbalWithNav::send(const io::VisionToGimbal & VisionToGimbal)
 {
-  tx_data_.mode = VisionToGimbal.mode;
-  tx_data_.yaw = VisionToGimbal.yaw;
-  tx_data_.yaw_vel = VisionToGimbal.yaw_vel;
-  tx_data_.yaw_acc = VisionToGimbal.yaw_acc;
-  tx_data_.pitch = VisionToGimbal.pitch;
-  tx_data_.pitch_vel = VisionToGimbal.pitch_vel;
-  tx_data_.pitch_acc = VisionToGimbal.pitch_acc;
-  tx_data_.crc16 = tools::get_crc16(
-    reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+  tx_data_gimbal.mode = VisionToGimbal.mode;
+  tx_data_gimbal.yaw = VisionToGimbal.yaw;
+  tx_data_gimbal.yaw_vel = VisionToGimbal.yaw_vel;
+  tx_data_gimbal.yaw_acc = VisionToGimbal.yaw_acc;
+  tx_data_gimbal.pitch = VisionToGimbal.pitch;
+  tx_data_gimbal.pitch_vel = VisionToGimbal.pitch_vel;
+  tx_data_gimbal.pitch_acc = VisionToGimbal.pitch_acc;
+  tx_data_gimbal.crc16 = tools::get_crc16(
+    reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal) - sizeof(tx_data_gimbal.crc16));
 
   try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
+    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
+  } catch (const std::exception & e) {
+    tools::logger()->warn("[GimbalWithNav] Failed to write serial: {}", e.what());
+  }
+}
+
+void GimbalWithNav::send_cmd_vel(const std::optional<const NavData> & nav_data)
+{
+  if (!nav_data.has_value()) return;
+
+  tx_data_nav.linear_x = nav_data->angular_x;
+  tx_data_nav.linear_y = nav_data->linear_y;
+  tx_data_nav.linear_z = nav_data->linear_z;
+  tx_data_nav.angular_x = nav_data->angular_x;
+  tx_data_nav.angular_y = nav_data->angular_y;
+  tx_data_nav.angular_z = nav_data->angular_z;
+  tx_data_nav.crc16 = tools::get_crc16(
+    reinterpret_cast<uint8_t *>(&tx_data_nav), sizeof(tx_data_nav) - sizeof(tx_data_nav.crc16));
+
+  try {
+    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_nav), sizeof(tx_data_nav));
   } catch (const std::exception & e) {
     tools::logger()->warn("[GimbalWithNav] Failed to write serial: {}", e.what());
   }
@@ -138,26 +121,21 @@ void GimbalWithNav::send(
   bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
   float pitch_acc)
 {
-  tx_data_.mode = control ? (fire ? 2 : 1) : 0;
-  tx_data_.yaw = yaw;
-  tx_data_.yaw_vel = yaw_vel;
-  tx_data_.yaw_acc = yaw_acc;
-  tx_data_.pitch = pitch;
-  tx_data_.pitch_vel = pitch_vel;
-  tx_data_.pitch_acc = pitch_acc;
-  tx_data_.crc16 = tools::get_crc16(
-    reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_) - sizeof(tx_data_.crc16));
+  tx_data_gimbal.mode = control ? (fire ? 2 : 1) : 0;
+  tx_data_gimbal.yaw = yaw;
+  tx_data_gimbal.yaw_vel = yaw_vel;
+  tx_data_gimbal.yaw_acc = yaw_acc;
+  tx_data_gimbal.pitch = pitch;
+  tx_data_gimbal.pitch_vel = pitch_vel;
+  tx_data_gimbal.pitch_acc = pitch_acc;
+  tx_data_gimbal.crc16 = tools::get_crc16(
+    reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal) - sizeof(tx_data_gimbal.crc16));
 
   try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_), sizeof(tx_data_));
+    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
   } catch (const std::exception & e) {
     tools::logger()->warn("[GimbalWithNav] Failed to write serial: {}", e.what());
   }
-}
-
-std::tuple<NavData, std::chrono::steady_clock::time_point> GimbalWithNav::nav_data()
-{
-  return nav_queue_.pop();
 }
 
 bool GimbalWithNav::read(uint8_t * buffer, size_t size)
@@ -188,7 +166,7 @@ void GimbalWithNav::read_thread()
       continue;
     }
 
-    if (rx_data_.head[0] != tx_data_.head[0] || rx_data_.head[1] != tx_data_.head[1]) continue;
+    if (rx_data_.head[0] != tx_data_gimbal.head[0] || rx_data_.head[1] != tx_data_gimbal.head[1]) continue;
 
     auto t = std::chrono::steady_clock::now();
 
@@ -238,67 +216,6 @@ void GimbalWithNav::read_thread()
   }
 
   tools::logger()->info("[GimbalWithNav] read_thread stopped.");
-}
-
-void GimbalWithNav::read_nav_tcp_thread()
-{
-  tools::logger()->info("[GimbalWithNav] nav tcp thread started on 0.0.0.0:{}", NAV_TCP_PORT);
-
-  nav_server_fd_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (nav_server_fd_ < 0) {
-    tools::logger()->error("[GimbalWithNav] nav socket() failed: {}", std::strerror(errno));
-    return;
-  }
-
-  int opt = 1;
-  setsockopt(nav_server_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  addr.sin_port = htons(NAV_TCP_PORT);
-
-  if (bind(nav_server_fd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
-    tools::logger()->error("[GimbalWithNav] nav bind() failed: {}", std::strerror(errno));
-    close(nav_server_fd_);
-    nav_server_fd_ = -1;
-    return;
-  }
-
-  if (listen(nav_server_fd_, 1) < 0) {
-    tools::logger()->error("[GimbalWithNav] nav listen() failed: {}", std::strerror(errno));
-    close(nav_server_fd_);
-    nav_server_fd_ = -1;
-    return;
-  }
-
-  while (!quit_) {
-    sockaddr_in client_addr{};
-    socklen_t client_len = sizeof(client_addr);
-    int client_fd = accept(nav_server_fd_, reinterpret_cast<sockaddr *>(&client_addr), &client_len);
-    if (client_fd < 0) {
-      if (quit_) break;
-      tools::logger()->warn("[GimbalWithNav] nav accept() failed: {}", std::strerror(errno));
-      continue;
-    }
-
-    nav_client_fd_ = client_fd;
-    tools::logger()->info("[GimbalWithNav] nav client connected: {}", inet_ntoa(client_addr.sin_addr));
-
-    while (!quit_) {
-      NavData nav{};
-      if (!recv_full(client_fd, reinterpret_cast<uint8_t *>(&nav), sizeof(NavData))) {
-        tools::logger()->warn("[GimbalWithNav] nav client disconnected.");
-        break;
-      }
-      nav_queue_.push({nav, std::chrono::steady_clock::now()});
-    }
-
-    close(client_fd);
-    nav_client_fd_ = -1;
-  }
-
-  tools::logger()->info("[GimbalWithNav] nav tcp thread stopped.");
 }
 
 void GimbalWithNav::reconnect()

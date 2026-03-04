@@ -13,12 +13,15 @@
 #include "tools/thread_safe_queue.hpp"
 #include "io/command.hpp"
 
+
 namespace io
 {
+extern constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
+
 #pragma pack(push, 1)
 struct GimbalToVision
 {
-  uint8_t head[2] = {'A', 'B'};
+  uint8_t head[2] = {gimbal_struct_header[0], gimbal_struct_header[1]};
   uint8_t mode;  // 0: 空闲, 1: 自瞄, 2: 小符, 3: 大符
   float q[4];    // wxyz顺序
   float yaw;
@@ -35,7 +38,7 @@ static_assert(sizeof(GimbalToVision) <= 64);
 #pragma pack(push, 1)
 struct VisionToGimbal
 {
-  const int8_t head[2] = {'A', 'B'};
+  const int8_t head[2] = {gimbal_struct_header[0], gimbal_struct_header[1]};
   uint8_t mode;  // 0: 不控制, 1: 控制云台但不开火，2: 控制云台且开火
   float yaw;
   float yaw_vel;
