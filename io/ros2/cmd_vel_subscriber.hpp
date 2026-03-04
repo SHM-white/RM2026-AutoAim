@@ -16,22 +16,12 @@ namespace io
 class CmdVelSubscriber : public rclcpp::Node
 {
 public:
-  explicit CmdVelSubscriber()
-  : Node("cmd_vel_subscriber")
-  {
-    subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
-      "/red_standard_robot1/cmd_vel", 10,
-      std::bind(&CmdVelSubscriber::topic_callback, this, std::placeholders::_1));
-    RCLCPP_INFO(this->get_logger(), "已订阅话题");
-    RCLCPP_INFO(this->get_logger(), "等待接收数据");
-  }
+  CmdVelSubscriber();
+
   ~CmdVelSubscriber() = default;
 
+  void start() { rclcpp::spin(this->shared_from_this()); }
   std::optional<NavData> last_data();
-  bool has_new_data() const
-  {
-    return !(nav_queue_.empty());
-  }
 
 private:
   void topic_callback(const geometry_msgs::msg::Twist::SharedPtr msg);
