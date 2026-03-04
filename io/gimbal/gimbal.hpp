@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <optional>
 
 #include "serial/serial.h"
 #include "tools/thread_safe_queue.hpp"
@@ -17,6 +18,22 @@
 namespace io
 {
 constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
+constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
+
+#pragma pack(push, 1)
+struct NavData
+{
+  uint8_t head[2] = {nav_struct_header[0], nav_struct_header[1]};
+  double linear_x;
+  double linear_y;
+  double linear_z;
+  double angular_x;
+  double angular_y;
+  double angular_z;
+  uint16_t crc16;
+};
+#pragma pack(pop)
+static_assert(sizeof(NavData) <= 64);
 
 #pragma pack(push, 1)
 struct GimbalToVision
@@ -87,6 +104,7 @@ public:
     float pitch_acc);
 
   void send(io::VisionToGimbal VisionToGimbal);
+  void send_cmd_vel(const std::optional<const NavData> & nav_data);
 
 private:
   serial::Serial serial_;
@@ -96,7 +114,8 @@ private:
   mutable std::mutex mutex_;
 
   GimbalToVision rx_data_;
-  VisionToGimbal tx_data_;
+  VisionToGimbal tx_data_gimbal;
+  NavData tx_data_nav;
 
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_;

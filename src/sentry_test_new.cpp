@@ -7,7 +7,7 @@
 #include <thread>
 
 #include "io/camera.hpp"
-#include "io/gimbal/gimbal_with_nav.hpp"
+#include "io/gimbal/gimbal.hpp"
 #include "io/ros2/ros2.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
@@ -40,7 +40,7 @@ int main(int argc, char * argv[])
   }
 
   io::ROS2 ros2;
-  io::GimbalWithNav gimbal(config_path);
+  io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
 
   auto_aim::YOLO yolo(config_path, true);
