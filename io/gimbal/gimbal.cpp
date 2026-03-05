@@ -144,25 +144,12 @@ void Gimbal::send_cmd_vel(const std::optional<const NavData> & nav_data)
 
 bool Gimbal::read(uint8_t * buffer, size_t size)
 {
-  size_t read_bytes = 0;
-  int timeout_count = 0;
-  while (read_bytes < size && !quit_) {
-    try {
-      size_t n = serial_.read(buffer + read_bytes, size - read_bytes);
-      if (n == 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        timeout_count++;
-        // 50ms没收到后续数据视为本包超时，避免死锁
-        if (timeout_count > 50) return false;
-      } else {
-        read_bytes += n;
-        timeout_count = 0;
-      }
-    } catch (const std::exception & e) {
-      return false;
-    }
+  try {
+    return serial_.read(buffer, size) == size;
+  } catch (const std::exception & e) {
+    // tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
+    return false;
   }
-  return read_bytes == size && !quit_;
 }
 
 void Gimbal::read_thread()
@@ -180,7 +167,7 @@ void Gimbal::read_thread()
 
     uint8_t first_byte;
     if (!read(&first_byte, 1)) {
-      // 超时没读到首字节说明单纯没数据或链路空闲，不视为出错断解
+      error_count++;
       continue;
     }
 
