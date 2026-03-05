@@ -29,6 +29,10 @@ sudo apt install -y \
     unzip \
     lsb-release \
     python3-pip
+    
+sudo systemctl stop brltty
+sudo systemctl disable brltty
+sudo apt remove brltty
 
 # Get user Downloads directory
 DOWNLOADS_DIR="$HOME/Downloads"
