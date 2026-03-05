@@ -17,7 +17,8 @@ io::CmdVelSubscriber::CmdVelSubscriber() : Node("cmd_vel_subscriber")
 {
   subscription_ = this->create_subscription<geometry_msgs::msg::Twist>(
     "/red_standard_robot1/cmd_vel", 10,
-    std::bind(&CmdVelSubscriber::topic_callback, this, std::placeholders::_1));
+    [this](auto msg) { this->topic_callback(msg); });
+    // std::bind(&CmdVelSubscriber::topic_callback, this, std::placeholders::_1));
   RCLCPP_INFO(this->get_logger(), "已订阅话题");
   RCLCPP_INFO(this->get_logger(), "等待接收数据");
 }

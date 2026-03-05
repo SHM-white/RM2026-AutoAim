@@ -16,6 +16,8 @@ ROS2::ROS2()
   subscribe_spin_thread_ = std::make_unique<std::thread>([this]() { subscribe2nav_->start(); });
 
   cmd_vel_subscriber_spin_thread_ = std::make_unique<std::thread>([this]() { cmd_vel_subscriber_->start(); });
+
+  nav_referee_pub_ = create_publisher<std_msgs::msg::UInt8MultiArray>("nav_referee_pub_node", "nav_referee_data", 10);
 }
 
 ROS2::~ROS2()
@@ -42,4 +44,17 @@ std::optional<NavData> ROS2::get_last_cmd_vel_data()
 {
   return cmd_vel_subscriber_->last_data();
 }
-}  // namespace io
+
+
+void ROS2::publish_nav_referee_data(uint16_t cmd_id, const std::vector<uint8_t> & data)
+{
+  if (nav_referee_pub_) {
+    std_msgs::msg::UInt8MultiArray msg;
+    // 首两位字节放cmd_id
+    msg.data.push_back(cmd_id & 0xFF);
+    msg.data.push_back((cmd_id >> 8) & 0xFF);
+    msg.data.insert(msg.data.end(), data.begin(), data.end());
+    nav_referee_pub_->publish(msg);
+  }
+}
+} // namespace io

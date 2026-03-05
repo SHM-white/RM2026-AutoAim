@@ -5,6 +5,8 @@
 #include "subscribe2nav.hpp"
 #include "cmd_vel_subscriber.hpp"
 
+#include <std_msgs/msg/u_int8_multi_array.hpp>
+
 namespace io
 {
 class ROS2
@@ -15,6 +17,8 @@ public:
   ~ROS2();
 
   void publish(const Eigen::Vector4d & target_pos);
+
+  void publish_nav_referee_data(uint16_t cmd_id, const std::vector<uint8_t> & data);
 
   std::vector<int8_t> subscribe_enemy_status();
 
@@ -44,6 +48,8 @@ private:
   std::unique_ptr<std::thread> publish_spin_thread_;
   std::unique_ptr<std::thread> subscribe_spin_thread_;
   std::unique_ptr<std::thread> cmd_vel_subscriber_spin_thread_;
+
+  std::shared_ptr<rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>> nav_referee_pub_;
 };
 
 }  // namespace io

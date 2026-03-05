@@ -8,6 +8,11 @@
 namespace io
 {
 Gimbal::Gimbal(const std::string & config_path)
+: Gimbal(config_path, [](uint16_t, const uint8_t*, uint16_t) {})
+{}
+
+Gimbal::Gimbal(const std::string & config_path, RefereeCallback referee_callback)
+: referee_callback_(std::move(referee_callback))
 {
   auto yaml = tools::load(config_path);
   auto com_port = tools::read<std::string>(yaml, "com_port");
@@ -160,57 +165,125 @@ void Gimbal::read_thread()
       continue;
     }
 
-    if (!read(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_.head))) {
+    uint8_t first_byte;
+    if (!read(&first_byte, 1)) {
       error_count++;
       continue;
     }
 
-    if (rx_data_.head[0] != gimbal_struct_header[0] || rx_data_.head[1] != gimbal_struct_header[1]) continue;
+    if (first_byte == gimbal_struct_header[0]) {
+      uint8_t second_byte;
+      if (!read(&second_byte, 1)) {
+        error_count++;
+        continue;
+      }
+      if (second_byte != gimbal_struct_header[1]) {
+        continue;
+      }
 
-    auto t = std::chrono::steady_clock::now();
+      rx_data_.head[0] = first_byte;
+      rx_data_.head[1] = second_byte;
 
-    if (!read(
-          reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
-          sizeof(rx_data_) - sizeof(rx_data_.head))) {
-      error_count++;
-      continue;
-    }
+      auto t = std::chrono::steady_clock::now();
 
-    if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
-      tools::logger()->debug("[Gimbal] CRC16 check failed.");
-      continue;
-    }
+      if (!read(
+            reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
+            sizeof(rx_data_) - sizeof(rx_data_.head))) {
+        error_count++;
+        continue;
+      }
 
-    error_count = 0;
-    Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
-    queue_.push({q, t});
+      if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
+        tools::logger()->debug("[Gimbal] CRC16 check failed.");
+        continue;
+      }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+      error_count = 0;
+      Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
+      queue_.push({q, t});
 
-    state_.yaw = rx_data_.yaw;
-    state_.yaw_vel = rx_data_.yaw_vel;
-    state_.pitch = rx_data_.pitch;
-    state_.pitch_vel = rx_data_.pitch_vel;
-    state_.bullet_speed = rx_data_.bullet_speed;
-    state_.bullet_count = rx_data_.bullet_count;
+      std::lock_guard<std::mutex> lock(mutex_);
 
-    switch (rx_data_.mode) {
-      case 0:
-        mode_ = GimbalMode::IDLE;
-        break;
-      case 1:
-        mode_ = GimbalMode::AUTO_AIM;
-        break;
-      case 2:
-        mode_ = GimbalMode::SMALL_BUFF;
-        break;
-      case 3:
-        mode_ = GimbalMode::BIG_BUFF;
-        break;
-      default:
-        mode_ = GimbalMode::IDLE;
-        tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
-        break;
+      state_.yaw = rx_data_.yaw;
+      state_.yaw_vel = rx_data_.yaw_vel;
+      state_.pitch = rx_data_.pitch;
+      state_.pitch_vel = rx_data_.pitch_vel;
+      state_.bullet_speed = rx_data_.bullet_speed;
+      state_.bullet_count = rx_data_.bullet_count;
+
+      switch (rx_data_.mode) {
+        case 0:
+          mode_ = GimbalMode::IDLE;
+          break;
+        case 1:
+          mode_ = GimbalMode::AUTO_AIM;
+          break;
+        case 2:
+          mode_ = GimbalMode::SMALL_BUFF;
+          break;
+        case 3:
+          mode_ = GimbalMode::BIG_BUFF;
+          break;
+        default:
+          mode_ = GimbalMode::IDLE;
+          tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
+          break;
+      }
+    } else if (first_byte == 0xA5) {
+      // 比赛裁判系统协议解析
+      uint8_t header[4]; // length(2), seq(1), crc8(1)
+      if (!read(header, 4)) {
+        error_count++;
+        continue;
+      }
+      
+      uint16_t data_len = *reinterpret_cast<uint16_t*>(header);
+      if (data_len > 256) {
+        continue; // 长度超限
+      }
+
+      // 可选：校验crc8
+      uint8_t crc_header[5] = {0xA5, header[0], header[1], header[2], header[3]};
+      if (!tools::check_crc8(crc_header, 5)) continue;
+
+      uint8_t cmd_buff[2];
+      if (!read(cmd_buff, 2)) {
+        error_count++;
+        continue;
+      }
+      uint16_t cmd_id = *reinterpret_cast<uint16_t*>(cmd_buff);
+
+      std::vector<uint8_t> data_buff(data_len);
+      if (data_len > 0) {
+        if (!read(data_buff.data(), data_len)) {
+          error_count++;
+          continue;
+        }
+      }
+
+      uint8_t tail[2]; // crc16
+      if (!read(tail, 2)) {
+        error_count++;
+        continue;
+      }
+
+      // 可选：验证全包crc16
+      std::vector<uint8_t> full_packet(1 + 4 + 2 + data_len); // header + cmd + data
+      full_packet[0] = 0xA5;
+      std::copy(header, header + 4, full_packet.begin() + 1);
+      std::copy(cmd_buff, cmd_buff + 2, full_packet.begin() + 5);
+      if (data_len > 0) {
+        std::copy(data_buff.data(), data_buff.data() + data_len, full_packet.begin() + 7);
+      }
+      uint16_t crc_calculated = tools::get_crc16(full_packet.data(), full_packet.size());
+      uint16_t crc_received = *reinterpret_cast<uint16_t*>(tail);
+      if (crc_calculated != crc_received) {
+        tools::logger()->debug("[Gimbal] Full packet CRC16 check failed.");
+        continue;
+      }
+      error_count = 0;
+      // 分类并回调裁判系统系统接口
+      parse_referee_data(cmd_id, data_buff.data(), data_len);
     }
   }
 
@@ -240,4 +313,28 @@ void Gimbal::reconnect()
   }
 }
 
-}  // namespace io
+
+void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len)
+{
+  switch (cmd_id) {
+    case 0x0101: // 场地事件数据
+    case 0x0102: // 补给站动作标识数据
+    case 0x0201: // 机器人性能体系状态
+    case 0x0202: // 实时功率热量数据
+    case 0x0203: // 机器人位置数据
+    case 0x0204: // 机器人增益数据
+    case 0x0206: // 伤害状态数据
+      if (nav_referee_callback_) {
+        std::vector<uint8_t> data_vec(data, data + len);
+        nav_referee_callback_(cmd_id, data_vec);
+      }
+      break;
+    default:
+      if (referee_callback_) {
+        referee_callback_(cmd_id, data, len);
+      }
+      break;
+  }
+}
+
+} // namespace io

@@ -4,6 +4,7 @@
 #include <Eigen/Geometry>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -19,6 +20,7 @@ namespace io
 {
 constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
 constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
+using RefereeCallback = std::function<void(uint16_t cmd_id, const uint8_t* data, uint16_t len)>;
 
 #pragma pack(push, 1)
 struct NavData
@@ -93,9 +95,16 @@ struct GimbalState
 class Gimbal
 {
 public:
+  // 裁判系统回调函数类型：参数依次为 cmd_id, 数据指针, 数据长度
+  using RefereeCallback = std::function<void(uint16_t cmd_id, const uint8_t* data, uint16_t len)>;
+  using NavRefereeCallback = std::function<void(uint16_t cmd_id, const std::vector<uint8_t>& data)>;
+
   Gimbal(const std::string & config_path);
+  Gimbal(const std::string & config_path, RefereeCallback referee_callback);
 
   ~Gimbal();
+
+  void set_nav_referee_callback(NavRefereeCallback cb) { nav_referee_callback_ = cb; }
 
   GimbalMode mode() const;
   GimbalState state() const;
@@ -128,6 +137,10 @@ private:
   bool read(uint8_t * buffer, size_t size);
   void read_thread();
   void reconnect();
+  void parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len);
+
+  RefereeCallback referee_callback_;
+  NavRefereeCallback nav_referee_callback_;
 };
 
 }  // namespace io
