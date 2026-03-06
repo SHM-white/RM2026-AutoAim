@@ -167,16 +167,24 @@ void Gimbal::read_thread()
 
     uint8_t first_byte;
     if (!read(&first_byte, 1)) {
-      error_count++;
       continue;
     }
-
+#ifndef NDEBUG
+    tools::logger()->debug("[Gimbal] Read first byte: 0x{:02X}", first_byte);
+    if (first_byte == 0x41){
+      tools::logger()->debug("[Gimbal] Detected header 'AB', trying to read the rest of the data...");
+    } else if (first_byte == 0xA5) {
+      tools::logger()->debug("[Gimbal] Detected referee system packet header, trying to read the rest of the packet...");
+    }
+#endif
     if (first_byte == gimbal_struct_header[0]) {
       uint8_t second_byte;
       if (!read(&second_byte, 1)) {
-        error_count++;
         continue;
       }
+#ifndef NDEBUG
+      tools::logger()->debug("[Gimbal] Read second byte: 0x{:02X}", second_byte);
+#endif
       if (second_byte != gimbal_struct_header[1]) {
         continue;
       }

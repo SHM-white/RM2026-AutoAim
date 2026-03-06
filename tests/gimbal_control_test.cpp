@@ -165,7 +165,7 @@ int main(int argc, char * argv[])
     plotter.plot(json);
 //tools::logger()->debug("t: {:.2f}, shoot: {}", t, command.shoot);
     // Send command
-    gimbal.send(command.control, command.shoot, command.yaw, yaw_vel, yaw_acc, command.pitch, pitch_vel, pitch_acc);
+    // gimbal.send(command.control, command.shoot, command.yaw, yaw_vel, yaw_acc, command.pitch, pitch_vel, pitch_acc);
 
 
     std::this_thread::sleep_for(10ms);
