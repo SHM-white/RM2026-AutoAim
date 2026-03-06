@@ -10,6 +10,7 @@
 #include "tools/logger.hpp"
 #include "tools/yaml.hpp"
 #include "io/gimbal/gimbal.hpp"
+#include "io/cboard_uart.hpp"
 
 using namespace std::chrono_literals;
 
@@ -54,7 +55,7 @@ int main(int argc, char * argv[])
 
   // 3. 循环监听串口数据
   tools::Exiter exiter;
-  uint8_t buffer[3];
+  uint8_t buffer[sizeof(io::GimbalToVision)];
 
   while (!exiter.exit()) {
     if (serial_.available()) {
