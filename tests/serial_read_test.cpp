@@ -54,7 +54,7 @@ int main(int argc, char * argv[])
 
   // 3. 循环监听串口数据
   tools::Exiter exiter;
-  uint8_t buffer[sizeof(io::GimbalToVision)];
+  uint8_t buffer[3];
 
   while (!exiter.exit()) {
     if (serial_.available()) {
