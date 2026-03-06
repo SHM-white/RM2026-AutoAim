@@ -125,7 +125,6 @@ private:
   std::atomic<bool> quit_ = false;
   mutable std::mutex mutex_;
 
-  GimbalToVision rx_data_;
   VisionToGimbal tx_data_gimbal;
   NavData tx_data_nav;
 

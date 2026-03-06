@@ -113,6 +113,9 @@ target_link_libraries(planner_test_offline ${OpenCV_LIBS} fmt::fmt yaml-cpp auto
 
 add_executable(gimbal_control_test tests/gimbal_control_test.cpp)
 target_link_libraries(gimbal_control_test ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim tools io)
+
+add_executable(cboard_uart_control_test tests/cboard_uart_control_test.cpp)
+target_link_libraries(cboard_uart_control_test ${OpenCV_LIBS} fmt::fmt yaml-cpp tools io)
 # 检查 ROS 环境
 find_package(ament_cmake QUIET)
 find_package(rclcpp QUIET)

@@ -171,86 +171,129 @@ void Gimbal::read_thread()
     }
 #ifndef NDEBUG
     tools::logger()->debug("[Gimbal] Read first byte: 0x{:02X}", first_byte);
-    if (first_byte == 0x41){
-      tools::logger()->debug("[Gimbal] Detected header 'AB', trying to read the rest of the data...");
+    if (first_byte == gimbal_struct_header[0]) {
+      tools::logger()->debug("[Gimbal] Detected potential GimbalToVision header byte.");
+    } else if (first_byte == nav_struct_header[0]) {
+      tools::logger()->debug("[Gimbal] Detected potential NavData header byte.");
     } else if (first_byte == 0xA5) {
-      tools::logger()->debug("[Gimbal] Detected referee system packet header, trying to read the rest of the packet...");
+      tools::logger()->debug("[Gimbal] Detected referee system packet header.");
     }
 #endif
+
     if (first_byte == gimbal_struct_header[0]) {
+      // ---- GimbalToVision packet ('A', 'B') ----
       uint8_t second_byte;
       if (!read(&second_byte, 1)) {
         continue;
       }
-#ifndef NDEBUG
-      tools::logger()->debug("[Gimbal] Read second byte: 0x{:02X}", second_byte);
-#endif
       if (second_byte != gimbal_struct_header[1]) {
         continue;
       }
 
-      rx_data_.head[0] = first_byte;
-      rx_data_.head[1] = second_byte;
-
       auto t = std::chrono::steady_clock::now();
 
+      // Use a local buffer to avoid member-variable aliasing across iterations
+      GimbalToVision rx_pkt;
+      rx_pkt.head[0] = first_byte;
+      rx_pkt.head[1] = second_byte;
+
       if (!read(
-            reinterpret_cast<uint8_t *>(&rx_data_) + sizeof(rx_data_.head),
-            sizeof(rx_data_) - sizeof(rx_data_.head))) {
+            reinterpret_cast<uint8_t *>(&rx_pkt) + sizeof(rx_pkt.head),
+            sizeof(rx_pkt) - sizeof(rx_pkt.head))) {
         error_count++;
         continue;
       }
 
-      if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_data_), sizeof(rx_data_))) {
-        tools::logger()->debug("[Gimbal] CRC16 check failed.");
+      if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt))) {
+        tools::logger()->debug("[Gimbal] CRC16 check failed for GimbalToVision packet.");
         continue;
       }
 
       error_count = 0;
-      Eigen::Quaterniond q(rx_data_.q[0], rx_data_.q[1], rx_data_.q[2], rx_data_.q[3]);
+      Eigen::Quaterniond q(rx_pkt.q[0], rx_pkt.q[1], rx_pkt.q[2], rx_pkt.q[3]);
       queue_.push({q, t});
 
-      std::lock_guard<std::mutex> lock(mutex_);
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
 
-      state_.yaw = rx_data_.yaw;
-      state_.yaw_vel = rx_data_.yaw_vel;
-      state_.pitch = rx_data_.pitch;
-      state_.pitch_vel = rx_data_.pitch_vel;
-      state_.bullet_speed = rx_data_.bullet_speed;
-      state_.bullet_count = rx_data_.bullet_count;
+        state_.yaw = rx_pkt.yaw;
+        state_.yaw_vel = rx_pkt.yaw_vel;
+        state_.pitch = rx_pkt.pitch;
+        state_.pitch_vel = rx_pkt.pitch_vel;
+        state_.bullet_speed = rx_pkt.bullet_speed;
+        state_.bullet_count = rx_pkt.bullet_count;
 
-      switch (rx_data_.mode) {
-        case 0:
-          mode_ = GimbalMode::IDLE;
-          break;
-        case 1:
-          mode_ = GimbalMode::AUTO_AIM;
-          break;
-        case 2:
-          mode_ = GimbalMode::SMALL_BUFF;
-          break;
-        case 3:
-          mode_ = GimbalMode::BIG_BUFF;
-          break;
-        default:
-          mode_ = GimbalMode::IDLE;
-          tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_data_.mode);
-          break;
+        switch (rx_pkt.mode) {
+          case 0:
+            mode_ = GimbalMode::IDLE;
+            break;
+          case 1:
+            mode_ = GimbalMode::AUTO_AIM;
+            break;
+          case 2:
+            mode_ = GimbalMode::SMALL_BUFF;
+            break;
+          case 3:
+            mode_ = GimbalMode::BIG_BUFF;
+            break;
+          default:
+            mode_ = GimbalMode::IDLE;
+            tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_pkt.mode);
+            break;
+        }
       }
+
+    } else if (first_byte == nav_struct_header[0]) {
+      // ---- NavData packet ('C', 'D') ----
+      uint8_t second_byte;
+      if (!read(&second_byte, 1)) {
+        continue;
+      }
+      if (second_byte != nav_struct_header[1]) {
+        continue;
+      }
+
+      NavData nav_pkt;
+      nav_pkt.head[0] = first_byte;
+      nav_pkt.head[1] = second_byte;
+
+      if (!read(
+            reinterpret_cast<uint8_t *>(&nav_pkt) + sizeof(nav_pkt.head),
+            sizeof(nav_pkt) - sizeof(nav_pkt.head))) {
+        error_count++;
+        continue;
+      }
+
+      if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&nav_pkt), sizeof(nav_pkt))) {
+        tools::logger()->debug("[Gimbal] CRC16 check failed for NavData packet.");
+        continue;
+      }
+
+      error_count = 0;
+      // Forward nav data to registered callback (same path as referee nav data).
+      // cmd_id 0x0000 is a sentinel that distinguishes incoming NavData from
+      // referee system packets, whose cmd_ids start at 0x0101.
+      if (nav_referee_callback_) {
+        constexpr uint16_t NAV_DATA_CMD_ID = 0x0000;
+        const uint8_t * raw = reinterpret_cast<const uint8_t *>(&nav_pkt);
+        std::vector<uint8_t> data_vec(raw, raw + sizeof(nav_pkt));
+        nav_referee_callback_(NAV_DATA_CMD_ID, data_vec);
+      }
+
     } else if (first_byte == 0xA5) {
-      // 比赛裁判系统协议解析
-      uint8_t header[4]; // length(2), seq(1), crc8(1)
+      // ---- Referee system packet (0xA5 header) ----
+      uint8_t header[4];  // length(2), seq(1), crc8(1)
       if (!read(header, 4)) {
         error_count++;
         continue;
       }
-      
-      uint16_t data_len = *reinterpret_cast<uint16_t*>(header);
+
+      uint16_t data_len = *reinterpret_cast<uint16_t *>(header);
       if (data_len > 256) {
-        continue; // 长度超限
+        continue;  // 长度超限
       }
 
-      // 可选：校验crc8
+      // 校验帧头 CRC8
       uint8_t crc_header[5] = {0xA5, header[0], header[1], header[2], header[3]};
       if (!tools::check_crc8(crc_header, 5)) continue;
 
@@ -259,7 +302,7 @@ void Gimbal::read_thread()
         error_count++;
         continue;
       }
-      uint16_t cmd_id = *reinterpret_cast<uint16_t*>(cmd_buff);
+      uint16_t cmd_id = *reinterpret_cast<uint16_t *>(cmd_buff);
 
       std::vector<uint8_t> data_buff(data_len);
       if (data_len > 0) {
@@ -269,14 +312,14 @@ void Gimbal::read_thread()
         }
       }
 
-      uint8_t tail[2]; // crc16
+      uint8_t tail[2];  // CRC16
       if (!read(tail, 2)) {
         error_count++;
         continue;
       }
 
-      // 可选：验证全包crc16
-      std::vector<uint8_t> full_packet(1 + 4 + 2 + data_len); // header + cmd + data
+      // 验证全包 CRC16
+      std::vector<uint8_t> full_packet(1 + 4 + 2 + data_len);
       full_packet[0] = 0xA5;
       std::copy(header, header + 4, full_packet.begin() + 1);
       std::copy(cmd_buff, cmd_buff + 2, full_packet.begin() + 5);
@@ -284,15 +327,15 @@ void Gimbal::read_thread()
         std::copy(data_buff.data(), data_buff.data() + data_len, full_packet.begin() + 7);
       }
       uint16_t crc_calculated = tools::get_crc16(full_packet.data(), full_packet.size());
-      uint16_t crc_received = *reinterpret_cast<uint16_t*>(tail);
+      uint16_t crc_received = *reinterpret_cast<uint16_t *>(tail);
       if (crc_calculated != crc_received) {
-        tools::logger()->debug("[Gimbal] Full packet CRC16 check failed.");
+        tools::logger()->debug("[Gimbal] Full packet CRC16 check failed for referee packet.");
         continue;
       }
       error_count = 0;
-      // 分类并回调裁判系统系统接口
       parse_referee_data(cmd_id, data_buff.data(), data_len);
     }
+    // Unknown first byte: silently skip and resume header search
   }
 
   tools::logger()->info("[Gimbal] read_thread stopped.");
