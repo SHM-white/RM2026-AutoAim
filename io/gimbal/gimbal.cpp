@@ -19,6 +19,9 @@ Gimbal::Gimbal(const std::string & config_path, RefereeCallback referee_callback
 
   try {
     serial_.setPort(com_port);
+    serial_.setBaudrate(115200);
+    serial::Timeout to = serial::Timeout::simpleTimeout(1000);
+    serial_.setTimeout(to);
     serial_.open();
   } catch (const std::exception & e) {
     tools::logger()->error("[Gimbal] Failed to open serial: {}", e.what());
