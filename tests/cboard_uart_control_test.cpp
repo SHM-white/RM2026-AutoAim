@@ -45,22 +45,22 @@ double pitch_cal(double t)
   return A * std::sin(w * t);
 }
 
-// PD-based trajectory follower (mimics MPC step structure from gimbal_control_test)
-TrajectoryState mpc_like_step(
-  double ref_pos, double ref_vel, double dt, double kp, double kd, double max_acc,
-  double & state_pos, double & state_vel)
-{
-  double pos_err = ref_pos - state_pos;
-  double vel_err = ref_vel - state_vel;
+// // PD-based trajectory follower (mimics MPC step structure from gimbal_control_test)
+// TrajectoryState mpc_like_step(
+//   double ref_pos, double ref_vel, double dt, double kp, double kd, double max_acc,
+//   double & state_pos, double & state_vel)
+// {
+//   double pos_err = ref_pos - state_pos;
+//   double vel_err = ref_vel - state_vel;
 
-  double acc = kp * pos_err + kd * vel_err;
-  acc = std::clamp(acc, -max_acc, max_acc);
+//   double acc = kp * pos_err + kd * vel_err;
+//   acc = std::clamp(acc, -max_acc, max_acc);
 
-  state_vel += acc * dt;
-  state_pos += state_vel * dt;
+//   state_vel += acc * dt;
+//   state_pos += state_vel * dt;
 
-  return {state_pos, state_vel, acc};
-}
+//   return {state_pos, state_vel, acc};
+// }
 
 // Periodic shoot command: fire for the first 2 s of every 5 s window
 bool shoot_cal(double t)
@@ -92,19 +92,19 @@ int main(int argc, char * argv[])
 
   std::cout << "[cboard_uart_control_test] Starting trajectory tracking..." << std::endl;
 
-  constexpr double dt = 0.01;           // 10 ms control period
-  constexpr double yaw_kp = 60.0;
-  constexpr double yaw_kd = 12.0;
-  constexpr double pitch_kp = 45.0;
-  constexpr double pitch_kd = 10.0;
-  constexpr double max_yaw_acc = 50.0;    // deg/s²
-  constexpr double max_pitch_acc = 100.0; // deg/s²
+  // constexpr double dt = 0.01;           // 10 ms control period
+  // constexpr double yaw_kp = 60.0;
+  // constexpr double yaw_kd = 12.0;
+  // constexpr double pitch_kp = 45.0;
+  // constexpr double pitch_kd = 10.0;
+  // constexpr double max_yaw_acc = 50.0;    // deg/s²
+  // constexpr double max_pitch_acc = 100.0; // deg/s²
 
-  bool initialized = false;
-  double yaw_state_pos = 0.0;
-  double yaw_state_vel = 0.0;
-  double pitch_state_pos = 0.0;
-  double pitch_state_vel = 0.0;
+  // bool initialized = false;
+  // double yaw_state_pos = 0.0;
+  // double yaw_state_vel = 0.0;
+  // double pitch_state_pos = 0.0;
+  // double pitch_state_vel = 0.0;
 
   auto start_time = std::chrono::steady_clock::now();
 
@@ -116,34 +116,37 @@ int main(int argc, char * argv[])
     double yaw_ref_pos = yaw_cal(t);
     double pitch_ref_pos = pitch_cal(t);
 
-    // Numerical derivative for reference velocity
-    double yaw_ref_vel = (yaw_cal(t + dt) - yaw_cal(t - dt)) / (2.0 * dt);
-    double pitch_ref_vel = (pitch_cal(t + dt) - pitch_cal(t - dt)) / (2.0 * dt);
+    // // Numerical derivative for reference velocity
+    // double yaw_ref_vel = (yaw_cal(t + dt) - yaw_cal(t - dt)) / (2.0 * dt);
+    // double pitch_ref_vel = (pitch_cal(t + dt) - pitch_cal(t - dt)) / (2.0 * dt);
 
-    // Seed controller state from reference on first iteration
-    if (!initialized) {
-      yaw_state_pos = yaw_ref_pos;
-      yaw_state_vel = yaw_ref_vel;
-      pitch_state_pos = pitch_ref_pos;
-      pitch_state_vel = pitch_ref_vel;
-      initialized = true;
-    }
+    // // Seed controller state from reference on first iteration
+    // if (!initialized) {
+    //   yaw_state_pos = yaw_ref_pos;
+    //   yaw_state_vel = yaw_ref_vel;
+    //   pitch_state_pos = pitch_ref_pos;
+    //   pitch_state_vel = pitch_ref_vel;
+    //   initialized = true;
+    // }
 
-    // Compute trajectory step
-    auto yaw_traj = mpc_like_step(
-      yaw_ref_pos, yaw_ref_vel, dt, yaw_kp, yaw_kd, max_yaw_acc,
-      yaw_state_pos, yaw_state_vel);
-    auto pitch_traj = mpc_like_step(
-      pitch_ref_pos, pitch_ref_vel, dt, pitch_kp, pitch_kd, max_pitch_acc,
-      pitch_state_pos, pitch_state_vel);
+    // // Compute trajectory step
+    // auto yaw_traj = mpc_like_step(
+    //   yaw_ref_pos, yaw_ref_vel, dt, yaw_kp, yaw_kd, max_yaw_acc,
+    //   yaw_state_pos, yaw_state_vel);
+    // auto pitch_traj = mpc_like_step(
+    //   pitch_ref_pos, pitch_ref_vel, dt, pitch_kp, pitch_kd, max_pitch_acc,
+    //   pitch_state_pos, pitch_state_vel);
 
     // Build command (CBoardUART uses yaw/pitch in radians)
     io::Command command;
     command.control = true;
     command.shoot = shoot_cal(t);
-    command.yaw = yaw_traj.pos / DEG_PER_RAD;
-    command.pitch = pitch_traj.pos / DEG_PER_RAD;
-
+    // command.yaw = yaw_traj.pos / DEG_PER_RAD;
+    // command.pitch = pitch_traj.pos / DEG_PER_RAD;
+    command.yaw = yaw_ref_pos / DEG_PER_RAD;
+    command.pitch = pitch_ref_pos / DEG_PER_RAD;
+    command.horizon_distance = 0.0; // Not used in this test
+    
     // Plot for debugging
     nlohmann::json json;
     json["t"] = t;
