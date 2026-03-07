@@ -375,21 +375,20 @@ void Gimbal::reconnect()
 void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len)
 {
   switch (cmd_id) {
-    case 0x0101: // 场地事件数据
-    case 0x0102: // 补给站动作标识数据
     case 0x0201: // 机器人性能体系状态
     case 0x0202: // 实时功率热量数据
-    case 0x0203: // 机器人位置数据
-    case 0x0204: // 机器人增益数据
-    case 0x0206: // 伤害状态数据
+      if (referee_callback_) {
+        referee_callback_(cmd_id, data, len);
+      }
+    // case 0x0203: // 机器人位置数据
+    // case 0x0204: // 机器人增益数据
+    // case 0x0206: // 伤害状态数据
+    // case 0x0101: // 场地事件数据
+    // case 0x0102: // 补给站动作标识数据
+    default: // 默认转发给导航决策器
       if (nav_referee_callback_) {
         std::vector<uint8_t> data_vec(data, data + len);
         nav_referee_callback_(cmd_id, data_vec);
-      }
-      break;
-    default:
-      if (referee_callback_) {
-        referee_callback_(cmd_id, data, len);
       }
       break;
   }
