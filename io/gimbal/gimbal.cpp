@@ -169,57 +169,62 @@ void Gimbal::read_thread()
     }
 
     uint8_t head_byte[2];
-    if (serial_.read(head_byte, 1) != 1) continue;
+    if (!read(head_byte, 1)) continue;
 
 #ifndef NDEBUG
     tools::logger()->debug("[Gimbal] Read first byte: 0x{:02X}", head_byte[0]);
-    if (head_byte[0] == gimbal_struct_header[0]) {
-      tools::logger()->debug("[Gimbal] Detected potential GimbalToVision header byte.");
-    } else if (head_byte[0] == nav_struct_header[0]) {
-      tools::logger()->debug("[Gimbal] Detected potential NavData header byte.");
-    } else if (head_byte[0] == 0xA5) {
-      tools::logger()->debug("[Gimbal] Detected referee system packet header.");
-    }
+    // if (head_byte[0] == gimbal_struct_header[0]) {
+    //   tools::logger()->debug("[Gimbal] Detected potential GimbalToVision header byte.");
+    // } else if (head_byte[0] == nav_struct_header[0]) {
+    //   tools::logger()->debug("[Gimbal] Detected potential NavData header byte.");
+    // } else if (head_byte[0] == 0xA5) {
+    //   tools::logger()->debug("[Gimbal] Detected referee system packet header.");
+    // }
 #endif
 
     if (head_byte[0] == gimbal_struct_header[0]) {
       // ---- GimbalToVision packet ('A', 'B') ----
-      if (serial_.read(head_byte + 1, 1) != 1) continue;
+      if (!read(head_byte + 1, 1)) continue;
       if (head_byte[1] != gimbal_struct_header[1]) continue;
 
       auto t = std::chrono::steady_clock::now();
 
       // Use a local buffer to avoid member-variable aliasing across iterations
-      uint8_t buffer[sizeof(GimbalToVision)];
-      buffer[0] = head_byte[0];
-      buffer[1] = head_byte[1];
+      static GimbalToVision rx_pkt;
+      rx_pkt.head[0] = head_byte[0];
+      rx_pkt.head[1] = head_byte[1];
 
-      if (serial_.read(buffer + 2, sizeof(GimbalToVision) - 2) != sizeof(GimbalToVision) - 2) {
+      if (!read(
+            reinterpret_cast<uint8_t *>(&rx_pkt) + sizeof(rx_pkt.head),
+            sizeof(rx_pkt) - sizeof(rx_pkt.head))) {
         error_count++;
         continue;
       }
+      auto crc16_passed = tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt));
+      tools::logger()->debug(
+        "[Gimbal] Received GimbalToVision packet: yaw={:.2f}, pitch={:.2f}, crc16=0x{:04X}, crc16_passed={}",
+        state_.yaw, state_.pitch, rx_pkt.crc16, crc16_passed);
 
-      if (!tools::check_crc16(buffer, sizeof(GimbalToVision))) {
+      if (!crc16_passed) {
         tools::logger()->debug("[Gimbal] CRC16 check failed for GimbalToVision packet.");
         continue;
       }
 
       error_count = 0;
-      GimbalToVision* rx_pkt = reinterpret_cast<GimbalToVision *>(buffer);
-      Eigen::Quaterniond q(rx_pkt->q[0], rx_pkt->q[1], rx_pkt->q[2], rx_pkt->q[3]);
+      Eigen::Quaterniond q(rx_pkt.q[0], rx_pkt.q[1], rx_pkt.q[2], rx_pkt.q[3]);
       queue_.push({q, t});
 
       {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        state_.yaw = rx_pkt->yaw;
-        state_.yaw_vel = rx_pkt->yaw_vel;
-        state_.pitch = rx_pkt->pitch;
-        state_.pitch_vel = rx_pkt->pitch_vel;
-        state_.bullet_speed = rx_pkt->bullet_speed;
-        state_.bullet_count = rx_pkt->bullet_count;
+        state_.yaw = rx_pkt.yaw;
+        state_.yaw_vel = rx_pkt.yaw_vel;
+        state_.pitch = rx_pkt.pitch;
+        state_.pitch_vel = rx_pkt.pitch_vel;
+        state_.bullet_speed = rx_pkt.bullet_speed;
+        state_.bullet_count = rx_pkt.bullet_count;
 
-        switch (rx_pkt->mode) {
+        switch (rx_pkt.mode) {
           case 0:
             mode_ = GimbalMode::IDLE;
             break;
@@ -234,11 +239,10 @@ void Gimbal::read_thread()
             break;
           default:
             mode_ = GimbalMode::IDLE;
-            tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_pkt->mode);
+            tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_pkt.mode);
             break;
         }
       }
-
     } 
     /*  
     ======================
