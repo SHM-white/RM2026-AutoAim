@@ -165,37 +165,31 @@ void Gimbal::read_thread()
       continue;
     }
 
-    uint8_t first_byte;
-    if (!read(&first_byte, 1)) {
-      continue;
-    }
+    uint8_t head_byte[2];
+    if (!read(head_byte, 1)) continue;
+
 #ifndef NDEBUG
-    tools::logger()->debug("[Gimbal] Read first byte: 0x{:02X}", first_byte);
-    if (first_byte == gimbal_struct_header[0]) {
+    tools::logger()->debug("[Gimbal] Read first byte: 0x{:02X}", head_byte[0]);
+    if (head_byte[0] == gimbal_struct_header[0]) {
       tools::logger()->debug("[Gimbal] Detected potential GimbalToVision header byte.");
-    } else if (first_byte == nav_struct_header[0]) {
+    } else if (head_byte[0] == nav_struct_header[0]) {
       tools::logger()->debug("[Gimbal] Detected potential NavData header byte.");
-    } else if (first_byte == 0xA5) {
+    } else if (head_byte[0] == 0xA5) {
       tools::logger()->debug("[Gimbal] Detected referee system packet header.");
     }
 #endif
 
-    if (first_byte == gimbal_struct_header[0]) {
+    if (head_byte[0] == gimbal_struct_header[0]) {
       // ---- GimbalToVision packet ('A', 'B') ----
-      uint8_t second_byte;
-      if (!read(&second_byte, 1)) {
-        continue;
-      }
-      if (second_byte != gimbal_struct_header[1]) {
-        continue;
-      }
+      if (!read(head_byte + 1, 1)) continue;
+      if (head_byte[1] != gimbal_struct_header[1]) continue;
 
       auto t = std::chrono::steady_clock::now();
 
       // Use a local buffer to avoid member-variable aliasing across iterations
       GimbalToVision rx_pkt;
-      rx_pkt.head[0] = first_byte;
-      rx_pkt.head[1] = second_byte;
+      rx_pkt.head[0] = head_byte[0];
+      rx_pkt.head[1] = head_byte[1];
 
       if (!read(
             reinterpret_cast<uint8_t *>(&rx_pkt) + sizeof(rx_pkt.head),
@@ -243,44 +237,51 @@ void Gimbal::read_thread()
         }
       }
 
-    } else if (first_byte == nav_struct_header[0]) {
-      // ---- NavData packet ('C', 'D') ----
-      uint8_t second_byte;
-      if (!read(&second_byte, 1)) {
-        continue;
-      }
-      if (second_byte != nav_struct_header[1]) {
-        continue;
-      }
+    } 
+    /*  
+    ======================
+    NavData will not be received from the gimbal firmware in the current setup.
+    ======================  
+    */
+    // else if (head_byte[0] == nav_struct_header[0]) {
+    //   // ---- NavData packet ('C', 'D') ----
+    //   uint8_t second_byte;
+    //   if (!read(&second_byte, 1)) {
+    //     continue;
+    //   }
+    //   if (second_byte != nav_struct_header[1]) {
+    //     continue;
+    //   }
 
-      NavData nav_pkt;
-      nav_pkt.head[0] = first_byte;
-      nav_pkt.head[1] = second_byte;
+    //   NavData nav_pkt;
+    //   nav_pkt.head[0] = head_byte[0];
+    //   nav_pkt.head[1] = head_byte[1];
 
-      if (!read(
-            reinterpret_cast<uint8_t *>(&nav_pkt) + sizeof(nav_pkt.head),
-            sizeof(nav_pkt) - sizeof(nav_pkt.head))) {
-        error_count++;
-        continue;
-      }
+    //   if (!read(
+    //         reinterpret_cast<uint8_t *>(&nav_pkt) + sizeof(nav_pkt.head),
+    //         sizeof(nav_pkt) - sizeof(nav_pkt.head))) {
+    //     error_count++;
+    //     continue;
+    //   }
 
-      if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&nav_pkt), sizeof(nav_pkt))) {
-        tools::logger()->debug("[Gimbal] CRC16 check failed for NavData packet.");
-        continue;
-      }
+    //   if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&nav_pkt), sizeof(nav_pkt))) {
+    //     tools::logger()->debug("[Gimbal] CRC16 check failed for NavData packet.");
+    //     continue;
+    //   }
 
-      error_count = 0;
-      // Forward nav data to registered callback (same path as referee nav data).
-      // cmd_id 0x0000 is a sentinel that distinguishes incoming NavData from
-      // referee system packets, whose cmd_ids start at 0x0101.
-      if (nav_referee_callback_) {
-        constexpr uint16_t NAV_DATA_CMD_ID = 0x0000;
-        const uint8_t * raw = reinterpret_cast<const uint8_t *>(&nav_pkt);
-        std::vector<uint8_t> data_vec(raw, raw + sizeof(nav_pkt));
-        nav_referee_callback_(NAV_DATA_CMD_ID, data_vec);
-      }
+    //   error_count = 0;
+    //   // Forward nav data to registered callback (same path as referee nav data).
+    //   // cmd_id 0x0000 is a sentinel that distinguishes incoming NavData from
+    //   // referee system packets, whose cmd_ids start at 0x0101.
+    //   if (nav_referee_callback_) {
+    //     constexpr uint16_t NAV_DATA_CMD_ID = 0x0000;
+    //     const uint8_t * raw = reinterpret_cast<const uint8_t *>(&nav_pkt);
+    //     std::vector<uint8_t> data_vec(raw, raw + sizeof(nav_pkt));
+    //     nav_referee_callback_(NAV_DATA_CMD_ID, data_vec);
+    //   }
 
-    } else if (first_byte == 0xA5) {
+    // } 
+    else if (head_byte[0] == 0xA5) {
       // ---- Referee system packet (0xA5 header) ----
       uint8_t header[4];  // length(2), seq(1), crc8(1)
       if (!read(header, 4)) {
