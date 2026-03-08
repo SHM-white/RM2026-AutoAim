@@ -244,49 +244,6 @@ void Gimbal::read_thread()
         }
       }
     } 
-    /*  
-    ======================
-    NavData will not be received from the gimbal firmware in the current setup.
-    ======================  
-    */
-    // else if (head_byte[0] == nav_struct_header[0]) {
-    //   // ---- NavData packet ('C', 'D') ----
-    //   uint8_t second_byte;
-    //   if (!read(&second_byte, 1)) {
-    //     continue;
-    //   }
-    //   if (second_byte != nav_struct_header[1]) {
-    //     continue;
-    //   }
-
-    //   NavData nav_pkt;
-    //   nav_pkt.head[0] = head_byte[0];
-    //   nav_pkt.head[1] = head_byte[1];
-
-    //   if (!read(
-    //         reinterpret_cast<uint8_t *>(&nav_pkt) + sizeof(nav_pkt.head),
-    //         sizeof(nav_pkt) - sizeof(nav_pkt.head))) {
-    //     error_count++;
-    //     continue;
-    //   }
-
-    //   if (!tools::check_crc16(reinterpret_cast<uint8_t *>(&nav_pkt), sizeof(nav_pkt))) {
-    //     tools::logger()->debug("[Gimbal] CRC16 check failed for NavData packet.");
-    //     continue;
-    //   }
-
-    //   error_count = 0;
-    //   // Forward nav data to registered callback (same path as referee nav data).
-    //   // cmd_id 0x0000 is a sentinel that distinguishes incoming NavData from
-    //   // referee system packets, whose cmd_ids start at 0x0101.
-    //   if (nav_referee_callback_) {
-    //     constexpr uint16_t NAV_DATA_CMD_ID = 0x0000;
-    //     const uint8_t * raw = reinterpret_cast<const uint8_t *>(&nav_pkt);
-    //     std::vector<uint8_t> data_vec(raw, raw + sizeof(nav_pkt));
-    //     nav_referee_callback_(NAV_DATA_CMD_ID, data_vec);
-    //   }
-
-    // } 
     else if (head_byte[0] == 0xA5) {
       // ---- Referee system packet (0xA5 header) ----
       uint8_t header[4];  // length(2), seq(1), crc8(1)
@@ -342,9 +299,7 @@ void Gimbal::read_thread()
       error_count = 0;
       parse_referee_data(cmd_id, data_buff.data(), data_len);
     }
-    // Unknown first byte: silently skip and resume header search
   }
-
   tools::logger()->info("[Gimbal] read_thread stopped.");
 }
 

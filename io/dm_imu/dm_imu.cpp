@@ -29,6 +29,7 @@ DM_IMU::~DM_IMU()
   if (rec_thread_.joinable()) {
     rec_thread_.join();
   }
+  send_command(IMU_COMMAND::RESTART);
   if (serial_.isOpen()) {
     serial_.close();
   }
@@ -46,6 +47,8 @@ void DM_IMU::init_serial()
     serial::Timeout time_out = serial::Timeout::simpleTimeout(20);
     serial_.setTimeout(time_out);
     serial_.open();
+    send_command(IMU_COMMAND::ZERO_ANGLE);
+
     usleep(1000000);  //1s
 
     tools::logger()->info("[DM_IMU] serial port opened");
@@ -75,7 +78,7 @@ void DM_IMU::get_imu_data_thread()
       // 读取后续3字节校验头部
       if (serial_.read(header + 1, 3) != 3) continue;
 
-      if (header[1] != 0xAA || header[2] != 0x9B || header[3] != 0x01) {
+      if (header[1] != 0xAA /*|| header[2] != 0x9B*/ || header[3] != 0x01) {
         continue;
       }
 
@@ -88,23 +91,23 @@ void DM_IMU::get_imu_data_thread()
       // 读取剩余数据 (57 - 4 = 53 bytes)
       if (serial_.read((uint8_t *)(&receive_data.accx_u32), 53) != 53) continue;
 
-      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader1), 16) == receive_data.crc1) {
+      if (tools::get_imu_crc16((uint8_t *)(&receive_data.FrameHeader1), 16) == receive_data.crc1) {
         data.accx = *((float *)(&receive_data.accx_u32));
         data.accy = *((float *)(&receive_data.accy_u32));
         data.accz = *((float *)(&receive_data.accz_u32));
       }
-      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader2), 16) == receive_data.crc2) {
+      if (tools::get_imu_crc16((uint8_t *)(&receive_data.FrameHeader2), 16) == receive_data.crc2) {
         data.gyrox = *((float *)(&receive_data.gyrox_u32));
         data.gyroy = *((float *)(&receive_data.gyroy_u32));
         data.gyroz = *((float *)(&receive_data.gyroz_u32));
       }
-      if (true || tools::get_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3) {
+      if (tools::get_imu_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3) {
         data.roll = *((float *)(&receive_data.roll_u32));
         data.pitch = *((float *)(&receive_data.pitch_u32));
         data.yaw = *((float *)(&receive_data.yaw_u32));
-        tools::logger()->debug(
-          "yaw: {:.2f}, pitch: {:.2f}, roll: {:.2f}", static_cast<double>(data.yaw),
-          static_cast<double>(data.pitch), static_cast<double>(data.roll));
+        // tools::logger()->debug(
+        //   "yaw: {:.2f}, pitch: {:.2f}, roll: {:.2f}", static_cast<double>(data.yaw),
+        //   static_cast<double>(data.pitch), static_cast<double>(data.roll));
       }
       auto timestamp = std::chrono::steady_clock::now();
       Eigen::Quaterniond q = Eigen::AngleAxisd(data.yaw * M_PI / 180, Eigen::Vector3d::UnitZ()) *
@@ -142,6 +145,123 @@ Eigen::Quaterniond DM_IMU::imu_at(std::chrono::steady_clock::time_point timestam
   Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
 
   return q_c;
+}
+
+void DM_IMU::send_command(IMU_COMMAND command, std::optional<uint8_t> param) {
+  uint8_t cmd_buffer[4] = {0xAA, 0x00, 0x00, 0x0D};  // 基础命令格式
+  switch (command)
+  {
+  case IMU_COMMAND::RESTART:
+    cmd_buffer[1] = 0x00; 
+    cmd_buffer[2] = 0x00;
+    break;
+  case IMU_COMMAND::DISABLE_RS485_ACTIVE:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x03;
+    break;
+  case IMU_COMMAND::DISABLE_ACC_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x04;
+    break;
+  case IMU_COMMAND::DISABLE_GYRO_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x05;
+    break;
+  case IMU_COMMAND::DISABLE_EULER_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x06;
+    break;
+  case IMU_COMMAND::DISABLE_QUAT_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x07;
+    break;
+  case IMU_COMMAND::DISABLE_CAN_ACTIVE:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x08;
+    break;
+  case IMU_COMMAND::ENABLE_RS485_ACTIVE:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x13;
+    break;
+  case IMU_COMMAND::ENABLE_ACC_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x14;
+    break;
+  case IMU_COMMAND::ENABLE_GYRO_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x15;
+    break;
+  case IMU_COMMAND::ENABLE_EULER_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x16;
+    break;
+  case IMU_COMMAND::ENABLE_QUAT_OUTPUT:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x17;
+    break;
+  case IMU_COMMAND::ENABLE_CAN_ACTIVE:
+    cmd_buffer[1] = 0x01;
+    cmd_buffer[2] = 0x18;
+    break;
+  case IMU_COMMAND::SAVE_PARAMS:
+    cmd_buffer[1] = 0x03;
+    cmd_buffer[2] = 0x01;
+    break;
+  case IMU_COMMAND::START_GYRO_CALIBRATE:
+    cmd_buffer[1] = 0x03;
+    cmd_buffer[2] = 0x02;
+    break;
+  case IMU_COMMAND::START_ACC_CALIBRATE:
+    cmd_buffer[1] = 0x03;
+    cmd_buffer[2] = 0x03;
+    break;
+  case IMU_COMMAND::DISABLE_TEMP_CONTROL:
+    cmd_buffer[1] = 0x04;
+    cmd_buffer[2] = 0x00;
+    break;
+  case IMU_COMMAND::ENABLE_TEMP_CONTROL:
+    cmd_buffer[1] = 0x04;
+    cmd_buffer[2] = 0x01;
+    break;
+  case IMU_COMMAND::SET_TEMP:
+    cmd_buffer[1] = 0x05;
+    cmd_buffer[2] = param.value_or(0);
+    break;
+  case IMU_COMMAND::ENTER_NORMAL_MODE:
+    cmd_buffer[1] = 0x06;
+    cmd_buffer[2] = 0x00;
+    break;
+  case IMU_COMMAND::ENTER_SET_MODE:
+    cmd_buffer[1] = 0x06;
+    cmd_buffer[2] = 0x01;
+    break;
+  case IMU_COMMAND::SET_CAN_ID:
+    cmd_buffer[1] = 0x08;
+    cmd_buffer[2] = param.value_or(0);
+    break;
+  case IMU_COMMAND::SET_MST_ID:
+    cmd_buffer[1] = 0x09;
+    cmd_buffer[2] = param.value_or(0);
+    break;
+  case IMU_COMMAND::SET_OUTPUT_INTERFACE:
+    cmd_buffer[1] = 0x0A;
+    cmd_buffer[2] = param.value_or(0);
+    break;
+  case IMU_COMMAND::RESTORE_FACTORY:
+    cmd_buffer[1] = 0x0B;
+    cmd_buffer[2] = 0x01;
+    break;
+  case IMU_COMMAND::ZERO_ANGLE:
+    cmd_buffer[1] = 0x0C;
+    cmd_buffer[2] = 0x01;
+    break;
+  default:
+    return;
+  }
+  
+  if (serial_.isOpen()) {
+    serial_.write(cmd_buffer, 4);
+  }
 }
 
 }  // namespace io

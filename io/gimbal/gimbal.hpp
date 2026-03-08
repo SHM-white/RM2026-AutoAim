@@ -104,7 +104,7 @@ public:
 
   ~Gimbal();
 
-  void set_nav_referee_callback(NavRefereeCallback cb) { nav_referee_callback_ = cb; }
+  void set_nav_referee_callback(NavRefereeCallback cb) { nav_referee_callback_ = std::move(cb); }
 
   GimbalMode mode() const;
   GimbalState state() const;

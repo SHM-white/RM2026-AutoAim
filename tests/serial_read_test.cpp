@@ -11,6 +11,7 @@
 #include "tools/yaml.hpp"
 #include "io/gimbal/gimbal.hpp"
 #include "io/cboard_uart.hpp"
+#include "io/dm_imu/dm_imu.hpp"
 
 using namespace std::chrono_literals;
 
@@ -29,7 +30,8 @@ int main(int argc, char * argv[])
 
   // 1. 读取配置文件
   auto yaml = tools::load(config_path);
-  auto com_port = tools::read<std::string>(yaml, "com_port");
+  // auto com_port = tools::read<std::string>(yaml, "com_port");
+  auto com_port = std::string("/dev/ttyACM0");
 
   tools::logger()->info("Target serial port: {}", com_port);
 
@@ -37,7 +39,7 @@ int main(int argc, char * argv[])
   serial::Serial serial_;
   try {
     serial_.setPort(com_port);
-    serial_.setBaudrate(115200);
+    serial_.setBaudrate(921600);
     serial::Timeout to = serial::Timeout::simpleTimeout(1000);
     serial_.setTimeout(to);
     serial_.open();
@@ -55,7 +57,7 @@ int main(int argc, char * argv[])
 
   // 3. 循环监听串口数据
   tools::Exiter exiter;
-  uint8_t buffer[sizeof(io::GimbalToVision)];
+  uint8_t buffer[sizeof(io::IMU_Data)];
 
   while (!exiter.exit()) {
     if (serial_.available()) {
