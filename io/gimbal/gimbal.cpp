@@ -8,11 +8,11 @@
 namespace io
 {
 Gimbal::Gimbal(const std::string & config_path)
-: Gimbal(config_path, [](uint16_t, const uint8_t*, uint16_t) {})
+: Gimbal(config_path, nullptr, nullptr, nullptr)
 {}
 
-Gimbal::Gimbal(const std::string & config_path, RefereeCallback referee_callback)
-: referee_callback_(std::move(referee_callback))
+Gimbal::Gimbal(const std::string & config_path, AfterSendGimbalData after_send_gimbal_data, RefereeCallback referee_callback, NavRefereeCallback nav_referee_callback)
+: after_send_gimbal_data_(std::move(after_send_gimbal_data)), referee_callback_(std::move(referee_callback)), nav_referee_callback_(std::move(nav_referee_callback))
 {
   auto yaml = tools::load(config_path);
   auto com_port = tools::read<std::string>(yaml, "com_port");
@@ -96,12 +96,7 @@ void Gimbal::send(io::VisionToGimbal VisionToGimbal)
   tx_data_gimbal.pitch_acc = VisionToGimbal.pitch_acc;
   tx_data_gimbal.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal) - sizeof(tx_data_gimbal.crc16));
-
-  try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
-  } catch (const std::exception & e) {
-    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
-  }
+  send_gimbal_data();
 }
 
 void Gimbal::send(
@@ -117,12 +112,7 @@ void Gimbal::send(
   tx_data_gimbal.pitch_acc = pitch_acc;
   tx_data_gimbal.crc16 = tools::get_crc16(
     reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal) - sizeof(tx_data_gimbal.crc16));
-
-  try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
-  } catch (const std::exception & e) {
-    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
-  }
+  send_gimbal_data();
 }
 
 void Gimbal::send_cmd_vel(const std::optional<const NavData> & nav_data)
@@ -143,6 +133,10 @@ void Gimbal::send_cmd_vel(const std::optional<const NavData> & nav_data)
   } catch (const std::exception & e) {
     tools::logger()->warn("[GimbalWithNav] Failed to write serial: {}", e.what());
   }
+}
+
+void Gimbal::send_imu_forward(const DM_IMU & imu) const {
+  imu.forward_data(serial_);
 }
 
 bool Gimbal::read(uint8_t * buffer, size_t size)
@@ -335,6 +329,7 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
       if (referee_callback_) {
         referee_callback_(cmd_id, data, len);
       }
+      break;
     // case 0x0203: // 机器人位置数据
     // case 0x0204: // 机器人增益数据
     // case 0x0206: // 伤害状态数据
@@ -346,6 +341,17 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
         nav_referee_callback_(cmd_id, data_vec);
       }
       break;
+  }
+}
+
+void Gimbal::send_gimbal_data() const {
+  try {
+    const_cast<serial::Serial &>(serial_).write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
+  } catch (const std::exception & e) {
+    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
+  }
+  if (after_send_gimbal_data_) {
+    after_send_gimbal_data_();
   }
 }
 

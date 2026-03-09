@@ -57,7 +57,7 @@ int main(int argc, char * argv[])
 
   // 3. 循环监听串口数据
   tools::Exiter exiter;
-  uint8_t buffer[sizeof(io::IMU_Data)];
+  uint8_t buffer[sizeof(io::IMU_Receive_Frame)];
 
   while (!exiter.exit()) {
     if (serial_.available()) {

@@ -14,6 +14,7 @@
 #include "serial/serial.h"
 #include "tools/thread_safe_queue.hpp"
 #include "io/command.hpp"
+#include "io/dm_imu/dm_imu.hpp"
 
 
 namespace io
@@ -98,13 +99,12 @@ public:
   // 裁判系统回调函数类型：参数依次为 cmd_id, 数据指针, 数据长度
   using RefereeCallback = std::function<void(uint16_t cmd_id, const uint8_t* data, uint16_t len)>;
   using NavRefereeCallback = std::function<void(uint16_t cmd_id, const std::vector<uint8_t>& data)>;
+  using AfterSendGimbalData = std::function<void(void)>;
 
   Gimbal(const std::string & config_path);
-  Gimbal(const std::string & config_path, RefereeCallback referee_callback);
+  Gimbal(const std::string & config_path, AfterSendGimbalData after_send_gimbal_data, RefereeCallback referee_callback, NavRefereeCallback nav_referee_callback);
 
   ~Gimbal();
-
-  void set_nav_referee_callback(NavRefereeCallback cb) { nav_referee_callback_ = std::move(cb); }
 
   GimbalMode mode() const;
   GimbalState state() const;
@@ -117,6 +117,7 @@ public:
 
   void send(io::VisionToGimbal VisionToGimbal);
   void send_cmd_vel(const std::optional<const NavData> & nav_data);
+  void send_imu_forward(const DM_IMU & imu) const;
 
 private:
   serial::Serial serial_;
@@ -137,9 +138,11 @@ private:
   void read_thread();
   void reconnect();
   void parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len);
+  void send_gimbal_data() const;
 
   RefereeCallback referee_callback_;
   NavRefereeCallback nav_referee_callback_;
+  AfterSendGimbalData after_send_gimbal_data_;
 };
 
 }  // namespace io
