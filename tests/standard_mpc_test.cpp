@@ -43,6 +43,7 @@ int main(int argc, char * argv[])
 
   io::Gimbal gimbal(config_path);
   io::Camera camera(config_path);
+  io::DM_IMU dm_imu;
 
   auto_aim::YOLO yolo(config_path, true);
   auto_aim::Solver solver(config_path);
@@ -133,8 +134,10 @@ int main(int argc, char * argv[])
         buff_plan.control, buff_plan.fire, buff_plan.yaw, buff_plan.yaw_vel, buff_plan.yaw_acc,
         buff_plan.pitch, buff_plan.pitch_vel, buff_plan.pitch_acc);
 
-    } else
+    } else {
       gimbal.send(false, false, 0, 0, 0, 0, 0, 0);
+    }    
+    gimbal.send_imu_forward(dm_imu);
   }
 
   quit = true;
