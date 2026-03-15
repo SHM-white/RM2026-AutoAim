@@ -12,6 +12,8 @@
 #include "tools/plotter.hpp"
 #include "io/gimbal/gimbal.hpp"
 
+#define USE_MPC 0
+
 using namespace std::chrono_literals;
 
 const std::string keys =
@@ -134,6 +136,7 @@ int main(int argc, char * argv[])
       initialized = true;
     }
 
+#if USE_MPC
     auto yaw_traj =
       mpc_like_step(yaw_ref_pos, yaw_ref_vel, dt, yaw_kp, yaw_kd, max_yaw_acc, yaw_state_pos, yaw_state_vel);
     auto pitch_traj = mpc_like_step(
@@ -150,6 +153,15 @@ int main(int argc, char * argv[])
     command.pitch = pitch_traj.pos / 57.3;
     double pitch_vel = pitch_traj.vel / 57.3;
     double pitch_acc = pitch_traj.acc / 57.3;
+#else
+    command.control = true;
+    command.yaw = yaw_ref_pos / 57.3;
+    double yaw_vel = yaw_ref_vel / 57.3;
+    double yaw_acc = 0;
+    command.pitch = pitch_ref_pos / 57.3;
+    double pitch_vel = pitch_ref_vel / 57.3;
+    double pitch_acc = 0;
+#endif
 
     command.shoot = shoot_cal(t);
     

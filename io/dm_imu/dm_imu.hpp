@@ -53,15 +53,6 @@ struct IMU_Receive_Frame
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct IMU_Forward_Frame
-{
-  const uint8_t header = 0x55;
-  IMU_Data data;
-  uint16_t crc16;  // CRC16校验码
-};
-#pragma pack(pop)
-
-#pragma pack(push, 1)
 typedef struct
 {
   float accx;   // 加速度X
@@ -74,6 +65,15 @@ typedef struct
   float pitch;  // 欧拉角pitch
   float yaw;    // 欧拉角yaw
 } IMU_Data;
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+struct IMU_Forward_Frame
+{
+  const uint8_t header = 0x55;
+  IMU_Data data;
+  uint16_t crc16;  // CRC16校验码
+};
 #pragma pack(pop)
 
 class DM_IMU

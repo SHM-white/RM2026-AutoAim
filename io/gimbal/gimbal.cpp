@@ -5,6 +5,10 @@
 #include "tools/math_tools.hpp"
 #include "tools/yaml.hpp"
 
+#ifndef NDEBUG
+#include "tools/plotter.hpp"
+#endif
+
 namespace io
 {
 Gimbal::Gimbal(const std::string & config_path)
@@ -154,6 +158,10 @@ void Gimbal::read_thread()
   tools::logger()->info("[Gimbal] read_thread started.");
   int error_count = 0;
 
+#ifndef NDEBUG
+  auto plotter = tools::Plotter{};
+#endif
+
   while (!quit_) {
     if (error_count > 5000) {
       error_count = 0;
@@ -196,8 +204,8 @@ void Gimbal::read_thread()
       }
       auto crc16_passed = tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt));
       tools::logger()->debug(
-        "[Gimbal] Received GimbalToVision packet: yaw={:.2f}, pitch={:.2f}, crc16=0x{:04X}, crc16_passed={}",
-        state_.yaw, state_.pitch, rx_pkt.crc16, crc16_passed);
+        "[Gimbal] Received GimbalToVision packet: yaw={:.2f}, pitch={:.2f}, crc16=0x{:04X}, received_crc16=0x{:04X}, crc16_passed={}",
+        rx_pkt.yaw, rx_pkt.pitch, tools::get_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt) - sizeof(rx_pkt.crc16)), rx_pkt.crc16, crc16_passed);
 
       if (!crc16_passed) {
         tools::logger()->debug("[Gimbal] CRC16 check failed for GimbalToVision packet.");
@@ -236,6 +244,17 @@ void Gimbal::read_thread()
             tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_pkt.mode);
             break;
         }
+        #ifndef NDEBUG
+        nlohmann::json data;
+        data["mode"] = str(mode_);
+        data["yaw"] = state_.yaw * 57.3;
+        data["yaw_vel"] = state_.yaw_vel * 57.3;
+        data["pitch"] = state_.pitch * 57.3;
+        data["pitch_vel"] = state_.pitch_vel * 57.3;
+        data["bullet_speed"] = state_.bullet_speed;
+        data["bullet_count"] = state_.bullet_count;
+        plotter.plot(data);
+        #endif
       }
     } 
     else if (head_byte[0] == 0xA5) {
