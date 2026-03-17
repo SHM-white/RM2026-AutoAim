@@ -7,9 +7,12 @@
 #include <thread>
 
 #include "io/camera.hpp"
-#include "io/cboard_uart.hpp"
+// #include "io/cboard_uart.hpp"
 #include "io/dm_imu/dm_imu.hpp"
+#include "io/gimbal/gimbal.hpp"
+#include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
+#include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
@@ -19,6 +22,12 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
+#include "tools/yaml.hpp"
+
+// 宏定义以控制射击逻辑：
+// true: 使用 Planner 的未来轨迹预测误差进行开火决策
+// false: 使用云台当前实际跟随误差容限进行开火决策 (Shooter 逻辑)
+#define USE_PLANNER_FIRE false
 
 using namespace std::chrono_literals;
 
@@ -39,10 +48,11 @@ int main(int argc, char * argv[])
   }
 
   // Use CBoardUART for sending commands
-  io::CBoardUART cboard(config_path);
+  // io::CBoardUART cboard(config_path);
   
   // Use DM_IMU for receiving quaternion
-  // io::DM_IMU imu;
+  io::DM_IMU imu;
+  io::Gimbal gimbal{config_path};
 
   io::Camera camera(config_path);
 
@@ -50,6 +60,8 @@ int main(int argc, char * argv[])
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
+  auto_aim::Aimer aimer(config_path);
+  auto_aim::Shooter shooter(config_path);
 
   tools::ThreadSafeQueue<std::optional<auto_aim::Target>, true> target_queue(1);
   target_queue.push(std::nullopt);
@@ -73,13 +85,30 @@ int main(int argc, char * argv[])
 
       // Construct io::Command
       io::Command cmd;
+      
+#if USE_PLANNER_FIRE
       cmd.control = plan.control;
-      cmd.shoot = plan.fire;
       cmd.yaw = plan.yaw;  // Adjust for any gimbal offset
       cmd.pitch = plan.pitch;
+      cmd.shoot = plan.fire;
+#else
+      std::list<auto_aim::Target> targets;
+      if (target.has_value()) {
+        targets.push_back(target.value());
+      }
+      
+      // 使用 aimer 计算传统瞄准命令
+      auto now = std::chrono::steady_clock::now();
+      cmd = aimer.aim(targets, now, bullet_speed);
+      
+      // shooter 采用原有逻辑判断射击
+      Eigen::Vector3d gimbal_pos = tools::eulers(imu.imu_at(now), 2, 1, 0);
+      cmd.shoot = shooter.shoot(cmd, aimer, targets, gimbal_pos);
+#endif
+
       // Other fields in cmd (like horizon_distance) are default 0 or ignored if not used by firmware
       
-      cboard.send(cmd);
+      gimbal.send(cmd.control, cmd.shoot, cmd.yaw, 0, 0, cmd.pitch, 0, 0);
 
       nlohmann::json data;
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
@@ -105,6 +134,9 @@ int main(int argc, char * argv[])
       data["target_yaw"] = plan.target_yaw;
       data["target_pitch"] = plan.target_pitch;
 
+      data["cmd_yaw"] = cmd.yaw * 57.3;
+      data["cmd_pitch"] = cmd.pitch * 57.3;
+
       data["plan_yaw"] = plan.yaw * 57.3;
       data["plan_yaw_vel"] = plan.yaw_vel;
       data["plan_yaw_acc"] = plan.yaw_acc;
@@ -113,8 +145,8 @@ int main(int argc, char * argv[])
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
 
-      data["fire"] = plan.fire ? 10 : 0;
-      data["control"] = cmd.control ? 10 : 0;
+      data["fire"] = cmd.shoot ? 100 : 0;
+      data["control"] = cmd.control ? 100 : 0;
 
       if (target.has_value()) {
         data["target_z"] = target->ekf_x()[4];   //z
@@ -140,7 +172,7 @@ int main(int argc, char * argv[])
     // 由于IMU横着装，需要应用旋转变换来校正坐标系
     // 如果IMU X轴指向右侧，使用 +M_PI / 2
     // 如果IMU X轴指向左侧，使用 -M_PI / 2
-    Eigen::Quaterniond q = cboard.imu_at(t);
+    Eigen::Quaterniond q = imu.imu_at(t);
     // Eigen::Quaterniond q_adjusted = q * Eigen::AngleAxisd(-M_PI / 2, Eigen::Vector3d::UnitZ());
     // q_adjusted.normalize();
 
@@ -186,7 +218,7 @@ int main(int argc, char * argv[])
   
   // Stop gimbal
   io::Command stop_cmd; // default is all false/0
-  cboard.send(stop_cmd);
+  gimbal.send(stop_cmd.control, stop_cmd.shoot, stop_cmd.yaw, 0, 0, stop_cmd.pitch, 0, 0);
 
   return 0;
 }
