@@ -6,12 +6,17 @@
 #include <opencv2/opencv.hpp>
 #include <thread>
 
+#define USE_PLANNER_FIRE false
+
 #include "io/camera.hpp"
 // #include "io/cboard_uart.hpp"
 #include "io/dm_imu/dm_imu.hpp"
 #include "io/gimbal/gimbal.hpp"
-#include "tasks/auto_aim/aimer.hpp"
+#if USE_PLANNER_FIRE
 #include "tasks/auto_aim/planner/planner.hpp"
+#else
+#include "tasks/auto_aim/aimer.hpp"
+#endif
 #include "tasks/auto_aim/shooter.hpp"
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
@@ -27,7 +32,6 @@
 // 宏定义以控制射击逻辑：
 // true: 使用 Planner 的未来轨迹预测误差进行开火决策
 // false: 使用云台当前实际跟随误差容限进行开火决策 (Shooter 逻辑)
-#define USE_PLANNER_FIRE false
 
 using namespace std::chrono_literals;
 
@@ -59,7 +63,9 @@ int main(int argc, char * argv[])
   auto_aim::YOLO yolo(config_path, true);
   auto_aim::Solver solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
+#if USE_PLANNER_FIRE
   auto_aim::Planner planner(config_path);
+#endif
   auto_aim::Aimer aimer(config_path);
   auto_aim::Shooter shooter(config_path);
 
@@ -81,12 +87,11 @@ int main(int argc, char * argv[])
       // Get bullet speed from cboard
       double bullet_speed = 5.0;
       
-      auto plan = planner.plan(target, bullet_speed);
-
       // Construct io::Command
       io::Command cmd;
       
 #if USE_PLANNER_FIRE
+      auto plan = planner.plan(target, bullet_speed);
       cmd.control = plan.control;
       cmd.yaw = plan.yaw;  // Adjust for any gimbal offset
       cmd.pitch = plan.pitch;
@@ -109,7 +114,7 @@ int main(int argc, char * argv[])
       // Other fields in cmd (like horizon_distance) are default 0 or ignored if not used by firmware
       
       gimbal.send(cmd.control, cmd.shoot, cmd.yaw, 0, 0, cmd.pitch, 0, 0);
-
+      gimbal.send_imu_forward(imu);
       nlohmann::json data;
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
 
@@ -131,11 +136,12 @@ int main(int argc, char * argv[])
       // Typically auto-aim works in absolute or relative-to-gimbal.
       // Let's assume the logic is consistent with auto_aim_debug_mpc.
 
-      data["target_yaw"] = plan.target_yaw;
-      data["target_pitch"] = plan.target_pitch;
-
       data["cmd_yaw"] = cmd.yaw * 57.3;
       data["cmd_pitch"] = cmd.pitch * 57.3;
+
+#if USE_PLANNER_FIRE
+      data["target_yaw"] = plan.target_yaw;
+      data["target_pitch"] = plan.target_pitch;
 
       data["plan_yaw"] = plan.yaw * 57.3;
       data["plan_yaw_vel"] = plan.yaw_vel;
@@ -144,6 +150,7 @@ int main(int argc, char * argv[])
       data["plan_pitch"] = plan.pitch * 57.3;
       data["plan_pitch_vel"] = plan.pitch_vel;
       data["plan_pitch_acc"] = plan.pitch_acc;
+#endif
 
       data["fire"] = cmd.shoot ? 100 : 0;
       data["control"] = cmd.control ? 100 : 0;
@@ -201,10 +208,18 @@ int main(int argc, char * argv[])
         tools::draw_points(img, image_points, {255, 255, 0});
       }
 
+#if USE_PLANNER_FIRE
       Eigen::Vector4d aim_xyza = planner.debug_xyza;
       auto image_points =
         solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
       tools::draw_points(img, image_points, {0, 0, 255});
+#else
+      auto aim_point = aimer.debug_aim_point;
+      Eigen::Vector4d aim_xyza = aim_point.xyza;
+      auto image_points =
+        solver.reproject_armor(aim_xyza.head(3), aim_xyza[3], target.armor_type, target.name);
+      if (aim_point.valid) tools::draw_points(img, image_points, {0, 0, 255});
+#endif
     }
 
     cv::resize(img, img, {}, 0.5, 0.5);
