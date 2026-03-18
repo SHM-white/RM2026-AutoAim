@@ -48,7 +48,11 @@ void DM_IMU::init_serial()
     serial_.setTimeout(time_out);
     serial_.open();
     send_command(IMU_COMMAND::ZERO_ANGLE);
-
+    send_command(IMU_COMMAND::ENTER_SET_MODE);
+    send_command(IMU_COMMAND::ENABLE_TEMP_CONTROL);
+    send_command(IMU_COMMAND::SET_TEMP, 25);
+    send_command(IMU_COMMAND::ENTER_NORMAL_MODE);
+    
     usleep(1000000);  //1s
 
     tools::logger()->info("[DM_IMU] serial port opened");
@@ -170,7 +174,7 @@ void DM_IMU::forward_data(const serial::Serial & serial) const {
   uint8_t read_idx = data_idx_.load(std::memory_order_acquire);
   forward_frame.data = data_buffer_[read_idx]; 
   
-  forward_frame.crc16 = tools::get_imu_crc16((uint8_t *)(&forward_frame.header), sizeof(IMU_Forward_Frame) - sizeof(uint16_t));
+  forward_frame.crc16 = tools::get_crc16((uint8_t *)(&forward_frame.header), sizeof(IMU_Forward_Frame) - sizeof(uint16_t));
   const_cast<serial::Serial &>(serial).write(reinterpret_cast<const uint8_t *>(&forward_frame), sizeof(IMU_Forward_Frame));
 }
 
