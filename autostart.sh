@@ -1,5 +1,5 @@
 sleep 5
-cd ~/Desktop/sp_vision_25/
+cd ~/RM2026-AutoAim/
 screen \
     -L \
     -Logfile logs/$(date "+%Y-%m-%d_%H-%M-%S").screenlog \

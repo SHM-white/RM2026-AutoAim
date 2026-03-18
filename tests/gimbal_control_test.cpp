@@ -34,8 +34,8 @@ double yaw_cal(double t)
   double T = 4;  // Period (seconds)
   double w = 2 * M_PI / T;
 
-  return A * std::sin(w * t);
-
+  // return A * std::sin(w * t);
+  return 10;
   // circle motion
   
   // return{ 
@@ -51,7 +51,8 @@ double pitch_cal(double t)
   double A = 30;
   double T = 5.0;
   double w = 2 * M_PI / T;
-  return A * std::sin(w * t);
+  // return A * std::sin(w * t);
+  return 10;
 }
 
 TrajectoryState mpc_like_step(
@@ -88,6 +89,7 @@ int main(int argc, char * argv[])
   }
 
   tools::Exiter exiter;
+  io::DM_IMU imu;
 
   // // Initialize CBoardUART
   // io::CBoardUART cboard(config_path);
@@ -123,6 +125,17 @@ int main(int argc, char * argv[])
   while (!exiter.exit()) {
     auto now = std::chrono::steady_clock::now();
     double t = tools::delta_time(now, start_time);
+    auto q = imu.imu_at(now);
+    auto q_adjusted = q * Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ());
+    q_adjusted.normalize();
+    q = q_adjusted; // 覆盖原始的q为校正后的q
+
+    auto eulers = tools::eulers(q, 2, 1, 0);  // For debugging
+    nlohmann::json data;
+    data["imu_roll"] = eulers[2] * 57.3;
+    data["imu_pitch"] = eulers[1] * 57.3;
+    data["imu_yaw"] = eulers[0] * 57.3;
+    plotter.plot(data);
 
     double yaw_ref_pos = yaw_cal(t);
     double pitch_ref_pos = pitch_cal(t);
@@ -156,7 +169,7 @@ int main(int argc, char * argv[])
     double pitch_vel = pitch_traj.vel / 57.3;
     double pitch_acc = pitch_traj.acc / 57.3;
 #else
-    command.control = true;
+    command.control = shoot_cal(t);
     command.yaw = yaw_ref_pos / 57.3;
     double yaw_vel = yaw_ref_vel / 57.3;
     double yaw_acc = 0;
@@ -165,10 +178,11 @@ int main(int argc, char * argv[])
     double pitch_acc = 0;
 #endif
 
-    command.shoot = shoot_cal(t);
+    command.shoot = false;
     
     // Plot command
     nlohmann::json json;
+    json["control"] = command.control ? 100 : 0;
     json["send_yaw"] = command.yaw * 57.3;
     json["send_yaw_vel"] = yaw_vel * 57.3;
     json["send_yaw_acc"] = yaw_acc * 57.3;
@@ -182,6 +196,9 @@ int main(int argc, char * argv[])
     gimbal.send(command.control, command.shoot, command.yaw, yaw_vel, yaw_acc, command.pitch, pitch_vel, pitch_acc);
     auto nav_data = ros.get_last_cmd_vel_data();
     gimbal.send_cmd_vel(nav_data);
+    gimbal.send_imu_forward(imu);
+
+     // Plot nav data
 
     std::this_thread::sleep_for(10ms);
   }
