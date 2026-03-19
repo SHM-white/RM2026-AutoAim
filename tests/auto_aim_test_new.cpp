@@ -177,7 +177,7 @@ int main(int argc, char * argv[])
     
     // Get quaternion directly from gimbal.q to avoid manual offsets
     Eigen::Quaterniond q = gimbal.q(t);
-    auto imu_q = imu.imu_at(t);
+    auto imu_q = imu.imu_at(t) * Eigen::Quaterniond(Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ())); // Adjust for IMU orientation if needed
 
     auto eulers = tools::eulers(q, 2, 1, 0);  // For debugging
     auto eulers_imu = tools::eulers(imu_q, 2, 1, 0);

@@ -66,7 +66,8 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     camera.read(img, timestamp);
-    Eigen::Quaterniond q = dm_imu.imu_at(timestamp - 1ms);
+    Eigen::Quaterniond q = dm_imu.imu_at(timestamp);
+    auto q_2 = gimbal.q(timestamp);
     // recorder.record(img, q, timestamp);
 
     /// 自瞄核心逻辑
@@ -97,7 +98,7 @@ int main(int argc, char * argv[])
     /// 发射逻辑
     command.shoot = shooter.shoot(command, aimer, targets, gimbal_pos);
     auto nav_data = ros2.get_last_cmd_vel_data();
-    gimbal.send(command.control, command.shoot, command.yaw, 0, 0, command.pitch, 0, 0);
+    gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
     gimbal.send_cmd_vel(nav_data);
 
