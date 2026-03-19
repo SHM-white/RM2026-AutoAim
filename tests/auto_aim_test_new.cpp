@@ -55,8 +55,8 @@ int main(int argc, char * argv[])
   // io::CBoardUART cboard(config_path);
   
   // Use DM_IMU for receiving quaternion
-  io::DM_IMU imu;
   io::Gimbal gimbal{config_path};
+  io::DM_IMU imu;
 
   io::Camera camera(config_path);
 

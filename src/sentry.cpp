@@ -33,7 +33,7 @@ int main(int argc, char * argv[])
 {
   tools::Exiter exiter;
   tools::Plotter plotter;
-  tools::Recorder recorder;
+  // tools::Recorder recorder;
 
   cv::CommandLineParser cli(argc, argv, keys);
   if (cli.has("help")) {
