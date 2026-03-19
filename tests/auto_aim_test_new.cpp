@@ -85,7 +85,7 @@ int main(int argc, char * argv[])
       auto target = target_queue.front();
       
       // Get bullet speed from cboard
-      double bullet_speed = 5.0;
+      double bullet_speed = gimbal.state().bullet_speed;
       
       // Construct io::Command
       io::Command cmd;
@@ -102,12 +102,11 @@ int main(int argc, char * argv[])
         targets.push_back(target.value());
       }
       
-      // 使用 aimer 计算传统瞄准命令
+      // shooter 采用原有逻辑判断射击
       auto now = std::chrono::steady_clock::now();
       cmd = aimer.aim(targets, now, bullet_speed);
       
-      // shooter 采用原有逻辑判断射击
-      Eigen::Quaterniond current_q = imu.imu_at(now) * Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ());
+      Eigen::Quaterniond current_q = gimbal.q(now);
       Eigen::Vector3d gimbal_pos = tools::eulers(current_q, 2, 1, 0);
       cmd.shoot = shooter.shoot(cmd, aimer, targets, gimbal_pos);
 #endif
@@ -176,20 +175,19 @@ int main(int argc, char * argv[])
   while (!exiter.exit()) {
     camera.read(img, t);
     
-    // Get quaternion from DM_IMU
-    // 由于IMU横着装，需要应用旋转变换来校正坐标系
-    // 当前IMU安装：X轴向后，Y轴向右，Z轴向上
-    // 标准前左上坐标(FLU)需绕Z轴旋转180度(M_PI)实现对齐
-    Eigen::Quaterniond q = imu.imu_at(t);
-    Eigen::Quaterniond q_adjusted = q * Eigen::AngleAxisd(M_PI, Eigen::Vector3d::UnitZ());
-    q_adjusted.normalize();
-    q = q_adjusted; // 覆盖原始的q为校正后的q
+    // Get quaternion directly from gimbal.q to avoid manual offsets
+    Eigen::Quaterniond q = gimbal.q(t);
+    auto imu_q = imu.imu_at(t);
 
     auto eulers = tools::eulers(q, 2, 1, 0);  // For debugging
+    auto eulers_imu = tools::eulers(imu_q, 2, 1, 0);
     nlohmann::json data;
-    data["imu_roll"] = eulers[2] * 57.3;
-    data["imu_pitch"] = eulers[1] * 57.3;
-    data["imu_yaw"] = eulers[0] * 57.3;
+    data["gimbal_roll"] = eulers[2] * 57.3;
+    data["gimbal_pitch"] = eulers[1] * 57.3;
+    data["gimbal_yaw"] = eulers[0] * 57.3;
+    data["imu_roll"] = eulers_imu[2] * 57.3;
+    data["imu_pitch"] = eulers_imu[1] * 57.3;
+    data["imu_yaw"] = eulers_imu[0] * 57.3;
     plotter.plot(data);
 
     solver.set_R_gimbal2world(q);
@@ -235,7 +233,7 @@ int main(int argc, char * argv[])
   
   // Stop gimbal
   io::Command stop_cmd; // default is all false/0
-  gimbal.send(stop_cmd.control, false, stop_cmd.yaw, 0, 0, stop_cmd.pitch, 0, 0);
+  gimbal.send(stop_cmd.control, stop_cmd.shoot, stop_cmd.yaw, 0, 0, stop_cmd.pitch, 0, 0);
 
   return 0;
 }

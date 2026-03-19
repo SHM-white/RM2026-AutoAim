@@ -89,6 +89,10 @@ Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
   }
 }
 
+void Gimbal::send(const io::Command & cmd) {
+  send(cmd.control, cmd.shoot, cmd.yaw, 0, 0, cmd.pitch, 0, 0);
+}
+
 void Gimbal::send(io::VisionToGimbal VisionToGimbal)
 {
   tx_data_gimbal.mode = VisionToGimbal.mode;
@@ -244,7 +248,7 @@ void Gimbal::read_thread()
             tools::logger()->warn("[Gimbal] Invalid mode: {}", rx_pkt.mode);
             break;
         }
-        #ifndef NDEBUG
+#ifndef NDEBUG
         nlohmann::json data;
         data["mode"] = str(mode_);
         data["yaw"] = state_.yaw * 57.3;
@@ -254,7 +258,7 @@ void Gimbal::read_thread()
         data["bullet_speed"] = state_.bullet_speed;
         data["bullet_count"] = state_.bullet_count;
         plotter.plot(data);
-        #endif
+#endif
       }
     } 
     else if (head_byte[0] == 0xA5) {
@@ -348,7 +352,7 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
       if (referee_callback_) {
         referee_callback_(cmd_id, data, len);
       }
-      break;
+      // break;
     // case 0x0203: // 机器人位置数据
     // case 0x0204: // 机器人增益数据
     // case 0x0206: // 伤害状态数据

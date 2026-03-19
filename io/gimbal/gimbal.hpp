@@ -115,6 +115,7 @@ public:
     bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
     float pitch_acc);
 
+  void send(const io::Command & cmd);
   void send(io::VisionToGimbal VisionToGimbal);
   void send_cmd_vel(const std::optional<const NavData> & nav_data);
   void send_imu_forward(const DM_IMU & imu) const;
