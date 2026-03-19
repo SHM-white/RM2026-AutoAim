@@ -52,7 +52,7 @@ void DM_IMU::init_serial()
     send_command(IMU_COMMAND::ENABLE_TEMP_CONTROL);
     send_command(IMU_COMMAND::SET_TEMP, 25);
     send_command(IMU_COMMAND::ENTER_NORMAL_MODE);
-    send_command(IMU_COMMAND::ZERO_ANGLE);
+    // send_command(IMU_COMMAND::ZERO_ANGLE);
     usleep(1000000);  //1s
 
     tools::logger()->info("[DM_IMU] serial port opened");

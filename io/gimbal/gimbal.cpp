@@ -217,9 +217,28 @@ void Gimbal::read_thread()
       }
 
       error_count = 0;
-      Eigen::Quaterniond q(rx_pkt.q[0], rx_pkt.q[1], rx_pkt.q[2], rx_pkt.q[3]);
-      queue_.push({q, t});
-
+      // Eigen::Quaterniond q(rx_pkt.q[0], rx_pkt.q[1], rx_pkt.q[2], rx_pkt.q[3]);
+      // queue_.push({q, t});
+             // Process Quaternion from yaw and pitch (roll = 0)
+      double pitch = rx_pkt.pitch;
+      double yaw = rx_pkt.yaw;
+      
+      double cy = std::cos(yaw * 0.5);
+      double sy = std::sin(yaw * 0.5);
+      double cp = std::cos(pitch * 0.5);
+      double sp = std::sin(pitch * 0.5);
+      
+      double w = cp * cy;
+      double x = -sp * sy;
+      double y = sp * cy;
+      double z = cp * sy;
+      
+      // Validate quaternion
+      if (std::abs(w * w + x * x + y * y + z * z - 1) < 1e-2) {
+          queue_.push({{w, x, y, z}, t});
+      } else {
+          tools::logger()->warn("[CBoardUART] Invalid quaternion received");
+      }
       {
         std::lock_guard<std::mutex> lock(mutex_);
 

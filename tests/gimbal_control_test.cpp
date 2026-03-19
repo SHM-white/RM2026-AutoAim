@@ -34,8 +34,8 @@ double yaw_cal(double t)
   double T = 4;  // Period (seconds)
   double w = 2 * M_PI / T;
 
-  // return A * std::sin(w * t);
-  return 10;
+  return A * std::sin(w * t);
+  // return -100;
   // circle motion
   
   // return{ 
@@ -51,8 +51,8 @@ double pitch_cal(double t)
   double A = 30;
   double T = 5.0;
   double w = 2 * M_PI / T;
-  // return A * std::sin(w * t);
-  return 10;
+  return A * std::sin(w * t);
+  // return 30;
 }
 
 TrajectoryState mpc_like_step(
@@ -130,11 +130,17 @@ int main(int argc, char * argv[])
     q_adjusted.normalize();
     q = q_adjusted; // 覆盖原始的q为校正后的q
 
+    auto motor_q = gimbal.q(now);
+    auto motor_eulers = tools::eulers(motor_q, 2, 1, 0);
+
     auto eulers = tools::eulers(q, 2, 1, 0);  // For debugging
     nlohmann::json data;
     data["imu_roll"] = eulers[2] * 57.3;
     data["imu_pitch"] = eulers[1] * 57.3;
     data["imu_yaw"] = eulers[0] * 57.3;
+    data["motor_roll"] = motor_eulers[2] * 57.3;
+    data["motor_pitch"] = motor_eulers[1] * 57.3;
+    data["motor_yaw"] = motor_eulers[0] * 57.3;
     plotter.plot(data);
 
     double yaw_ref_pos = yaw_cal(t);
@@ -169,7 +175,7 @@ int main(int argc, char * argv[])
     double pitch_vel = pitch_traj.vel / 57.3;
     double pitch_acc = pitch_traj.acc / 57.3;
 #else
-    command.control = shoot_cal(t);
+    command.control = true;
     command.yaw = yaw_ref_pos / 57.3;
     double yaw_vel = yaw_ref_vel / 57.3;
     double yaw_acc = 0;
