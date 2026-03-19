@@ -113,7 +113,7 @@ int main(int argc, char * argv[])
 
       // Other fields in cmd (like horizon_distance) are default 0 or ignored if not used by firmware
       
-      gimbal.send(cmd.control | true, cmd.shoot | true, cmd.yaw, 0, 0, cmd.pitch, 0, 0);
+      gimbal.send(cmd.control, cmd.shoot, cmd.yaw, 0, 0, cmd.pitch, 0, 0);
       gimbal.send_imu_forward(imu);
       nlohmann::json data;
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
