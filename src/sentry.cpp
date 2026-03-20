@@ -57,7 +57,7 @@ int main(int argc, char * argv[])
   auto_aim::Aimer aimer(config_path);
   auto_aim::Shooter shooter(config_path);
 
-  omniperception::Decider decider(config_path);
+  // omniperception::Decider decider(config_path);
 
   cv::Mat img;
 
@@ -97,11 +97,11 @@ int main(int argc, char * argv[])
       
       command.control = true;
       // 使云台yaw以1.5弧度/秒不断旋转并映射至[-PI, PI)
-      command.yaw = std::fmod(t * 1.5, 2 * M_PI);
-      if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
+      command.yaw = 0.5 * std::sin(t * 1.5) * M_PI;  // 1.5 rad/s的正弦波，幅值为PI
+      // if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
       
       // pitch以2 rad/s的速度，在-0.2到+0.2弧度上下摆动
-      command.pitch = 0.2 * std::sin(t * 2.0);
+      command.pitch = 0.2 * std::sin(t * 3.0);
       command.shoot = false;
     } else {
       command = aimer.aim(targets, timestamp, gimbal.state().bullet_speed);
@@ -115,7 +115,7 @@ int main(int argc, char * argv[])
     } else {
       command.shoot = false;
     }
-
+    command.shoot = false;
     auto nav_data = ros2.get_last_cmd_vel_data();
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
