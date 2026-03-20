@@ -70,7 +70,7 @@ int main(int argc, char * argv[])
   std::chrono::steady_clock::time_point timestamp;
   io::Command last_command;
 
-  decider_sentry.start_nav_thread();
+  decider_sentry.start_nav_thread(&dm_imu);
 
   while (!exiter.exit()) {
     camera.read(img, timestamp);
@@ -130,7 +130,6 @@ int main(int argc, char * argv[])
     } else {
       command.shoot = false;
     }
-    command.shoot = false;
     
     io::NavData nav_data = decider_sentry.get_nav_data();
     uint8_t cur_game_progress = decider_sentry.get_game_progress();

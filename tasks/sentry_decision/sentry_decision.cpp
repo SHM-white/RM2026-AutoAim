@@ -1,4 +1,6 @@
 #include "sentry_decision.hpp"
+
+#include <algorithm>
 #include <iostream>
 
 namespace sentry_decision {
@@ -23,8 +25,9 @@ void SentryDecider::referee_callback(uint16_t cmd_id, const uint8_t* data, uint1
   }
 }
 
-void SentryDecider::start_nav_thread() {
+void SentryDecider::start_nav_thread(io::DM_IMU* imu) {
   if (!is_running) {
+    imu_ = imu;
     is_running = true;
     nav_thread = std::thread(&SentryDecider::nav_loop, this);
   }
@@ -52,145 +55,170 @@ uint8_t SentryDecider::get_game_progress() {
 void SentryDecider::nav_loop() {
   enum class State {
     INIT,
-    EXPLORING,
-    RETURN_HOME_FOR_NEXT_DIR,
-    WAITING_NEXT_DIR,
-    MOVING_TO_TARGET,
-    RETREATING,
-    RECOVERING
+    STAGE1_MOVE_RIGHT,
+    STAGE2_MOVE_FORWARD,
+    STAGE3_MOVE_LEFT,
+    RETREAT_TO_HOME,
+    RECOVERING,
+    STOP
   } state = State::INIT;
-  
-  float target_x = 0;
-  float target_y = 0;
-  float home_x = 0;
-  float home_y = 0;
-  
-  int current_dir_idx = 0;
-  // 0: +x, 1: -y, 2: -x, 3: +y 
-  float dirs[4][2] = {{1, 0}, {0, -1}, {-1, 0}, {0, 1}};
+
+  float pos_x = 0;
+  float pos_y = 0;
+  float vel_x = 0;
+  float vel_y = 0;
+
+  float initial_yaw = 0;
+  bool is_initialized = false;
+  float stage3_start_y = 0;
+  State resume_state = State::STAGE1_MOVE_RIGHT;
 
   auto setup_time = std::chrono::steady_clock::now();
-  auto stuck_check_start = std::chrono::steady_clock::now();
-  auto wait_start_time = std::chrono::steady_clock::now();
-  float stuck_check_x = 0;
-  float stuck_check_y = 0;
-  bool is_initialized = false;
+  auto last_time = std::chrono::steady_clock::now();
 
-  auto start_time = std::chrono::steady_clock::now();
-  
   while (is_running) {
     auto now = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(now - last_time).count();
+    last_time = now;
+    if (dt <= 0.0f) dt = 0.02f;
+
+    io::NavData data = {0};
     
-    float current_x, current_y;
-    uint16_t current_hp, max_hp;
-    
-    {
-      std::lock_guard<std::mutex> lock(referee_mutex);
-      current_x = robot_pos.x;
-      current_y = robot_pos.y;
-      
-      // 优先使用 0x0201 的状态，如果为空则尝试使用 0x0003 的状态
-      current_hp = robot_status.current_HP > 0 ? robot_status.current_HP : game_robot_hp.ally_7_robot_HP;
-      max_hp = robot_status.maximum_HP > 0 ? robot_status.maximum_HP : 600; 
+    io::IMU_Data imu_data = {0};
+    if (imu_ != nullptr) {
+      imu_data = imu_->current_data();
     }
 
-    float error_x = 0;
-    float error_y = 0;
+    uint16_t current_hp = 0;
+    uint16_t max_hp = 600;
+    {
+      std::lock_guard<std::mutex> lock(referee_mutex);
+      // 保留裁判系统血量逻辑：优先使用 0x0201，无数据时回退到 0x0003。
+      current_hp = robot_status.current_HP > 0 ? robot_status.current_HP : game_robot_hp.ally_7_robot_HP;
+      max_hp = robot_status.maximum_HP > 0 ? robot_status.maximum_HP : 600;
+    }
 
     if (!is_initialized) {
-      if (std::chrono::duration<double>(now - setup_time).count() > 1.0) {
-        home_x = current_x;
-        home_y = current_y;
+      if (std::chrono::duration<double>(now - setup_time).count() > 1.5) {
+        initial_yaw = imu_data.yaw;
         is_initialized = true;
-        state = State::EXPLORING;
-        stuck_check_start = now;
-        stuck_check_x = current_x;
-        stuck_check_y = current_y;
+        state = State::STAGE1_MOVE_RIGHT;
+        pos_x = 0;
+        pos_y = 0;
+        vel_x = 0;
+        vel_y = 0;
       } else {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         continue;
       }
     }
 
-    // 状态机判断
-    if (state == State::EXPLORING) {
-      float try_target_x = home_x + dirs[current_dir_idx][0] * 3.0f;
-      float try_target_y = home_y + dirs[current_dir_idx][1] * 3.0f;
-      
-      error_x = try_target_x - current_x;
-      error_y = try_target_y - current_y;
+    // 转换加速度到起点的全局坐标系，带死区控制降低静态漂移
+    float yaw_rad = (imu_data.yaw - initial_yaw) * M_PI / 180.0f;
+    float acc_x_local = imu_data.accx * 9.8f;
+    float acc_y_local = imu_data.accy * 9.8f;
+    
+    // 假设死区过滤极小漂移
+    if (std::abs(acc_x_local) < 0.2f) acc_x_local = 0;
+    if (std::abs(acc_y_local) < 0.2f) acc_y_local = 0;
 
-      // 判断是否到达3m无障碍
-      if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
-         target_x = home_x + dirs[current_dir_idx][0] * 6.0f;
-         target_y = home_y + dirs[current_dir_idx][1] * 6.0f;
-         state = State::MOVING_TO_TARGET;
-      } else {
-         // 检查是否受阻(卡住)
-         if (std::chrono::duration<double>(now - stuck_check_start).count() > 2.0) {
-           float dist_moved = std::hypot(current_x - stuck_check_x, current_y - stuck_check_y);
-           if (dist_moved < 0.2f) { // 2秒移动低于0.2m被视为卡住
-             state = State::RETURN_HOME_FOR_NEXT_DIR;
-           }
-           stuck_check_start = now;
-           stuck_check_x = current_x;
-           stuck_check_y = current_y;
-         }
-      }
-    } else if (state == State::RETURN_HOME_FOR_NEXT_DIR) {
-      error_x = home_x - current_x;
-      error_y = home_y - current_y;
-      if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
-          state = State::WAITING_NEXT_DIR;
-          wait_start_time = now;
-      }
-    } else if (state == State::WAITING_NEXT_DIR) {
-      error_x = 0;
-      error_y = 0;
-      if (std::chrono::duration<double>(now - wait_start_time).count() > 2.0) {
-          current_dir_idx = (current_dir_idx + 1) % 4; // 尝试下一个方向
-          state = State::EXPLORING;
-          stuck_check_start = now;
-          stuck_check_x = current_x;
-          stuck_check_y = current_y;
-      }
-    } else if (state == State::MOVING_TO_TARGET) {
-      if (current_hp > 0 && current_hp < max_hp * 0.3) {  // 低于 30% 血量视作低血量
-        state = State::RETREATING;
-      } else {
-        error_x = target_x - current_x;
-        error_y = target_y - current_y;
-      }
-    } else if (state == State::RETREATING) {
-      error_x = home_x - current_x;
-      error_y = home_y - current_y;
-      // 判断是否回到原点附近 (误差半径 0.2m)
-      if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
-        state = State::RECOVERING;
-      }
-    } else if (state == State::RECOVERING) {
-      // 血量回满或达到 90%
-      if (current_hp >= max_hp * 0.9) { 
-        state = State::MOVING_TO_TARGET;
-      }
-      error_x = 0; 
-      error_y = 0;
+    // 旋转到初始化坐标系 (X为前, Y为左)
+    float acc_x_global = acc_x_local * std::cos(yaw_rad) - acc_y_local * std::sin(yaw_rad);
+    float acc_y_global = acc_x_local * std::sin(yaw_rad) + acc_y_local * std::cos(yaw_rad);
+
+    vel_x += acc_x_global * dt;
+    vel_y += acc_y_global * dt;
+    
+    // 给速度添加阻尼，防止无限积分和随时间过度漂移
+    vel_x *= 0.95f;
+    vel_y *= 0.95f;
+
+    pos_x += vel_x * dt;
+    pos_y += vel_y * dt;
+
+    // 撞墙检测 (例如加速度突增超过1.2g)
+    bool hit_wall = std::hypot(imu_data.accx, imu_data.accy) > 1.2f;
+
+    // 低血量时按原逻辑返航，回到原点后等待恢复再继续。
+    bool hp_available = current_hp > 0 && max_hp > 0;
+    bool low_hp = hp_available && current_hp < static_cast<uint16_t>(max_hp * 0.3f);
+    bool hp_recovered = hp_available && current_hp >= static_cast<uint16_t>(max_hp * 0.9f);
+    bool in_mission_stage =
+      state == State::STAGE1_MOVE_RIGHT ||
+      state == State::STAGE2_MOVE_FORWARD ||
+      state == State::STAGE3_MOVE_LEFT;
+
+    if (in_mission_stage && low_hp) {
+      resume_state = state;
+      state = State::RETREAT_TO_HOME;
     }
 
-    io::NavData data = {0};
-    
-    // 简单 P 控制转换误差为速度，并截断至 [-0.5, 0.5]
-    float kp = 0.5f;
-    float vx = kp * error_x;
-    float vy = kp * error_y;
-    
-    if (vx > 0.5f) vx = 0.5f; else if (vx < -0.5f) vx = -0.5f;
-    if (vy > 0.5f) vy = 0.5f; else if (vy < -0.5f) vy = -0.5f;
+    if (state == State::STAGE1_MOVE_RIGHT) {
+      // 在初始坐标下，Y为左，向右则为负Y方向，全长大约8m
+      if (pos_y <= -6.0f) {
+        data.linear_x = 0;
+        data.linear_y = -0.2f; // 接近6~7m时减速
+      } else {
+        data.linear_x = 0;
+        data.linear_y = -0.5f; 
+      }
+      
+      // 检测撞墙或者超出极限
+      if (hit_wall || pos_y <= -8.0f) {
+        state = State::STAGE2_MOVE_FORWARD;
+        vel_x = 0;
+        vel_y = 0;
+        pos_y = -8.0f; // 撞墙后锁定到边界估计值
+      }
+    } else if (state == State::STAGE2_MOVE_FORWARD) {
+      // 向前对应的方向是X方向正向，界限约7.5m
+      data.linear_x = 0.5f;
+      data.linear_y = 0;
+      
+      if (hit_wall || pos_x >= 7.5f) {
+        state = State::STAGE3_MOVE_LEFT;
+        vel_x = 0;
+        vel_y = 0;
+        pos_x = 7.5f;
+        pos_y = -8.0f;
+        stage3_start_y = pos_y; // 记录处于第3阶段初始起点位置
+      }
+    } else if (state == State::STAGE3_MOVE_LEFT) {
+      // 向左对应的方向是Y方向正向，需走大约4m (回到中点)
+      data.linear_x = 0;
+      data.linear_y = 0.5f;
+      
+      if (pos_y - stage3_start_y >= 4.0f) {
+        state = State::STOP;
+        vel_x = 0;
+        vel_y = 0;
+      }
+    } else if (state == State::RETREAT_TO_HOME) {
+      // 低血量返航：回到起点(0,0)。
+      float err_x = -pos_x;
+      float err_y = -pos_y;
+      float retreat_kp = 0.4f;
+      data.linear_x = std::clamp(retreat_kp * err_x, -0.4f, 0.4f);
+      data.linear_y = std::clamp(retreat_kp * err_y, -0.4f, 0.4f);
 
-    data.linear_x = vx;
-    data.linear_y = vy;
-    data.angular_z = 0; 
-    
+      if (std::abs(err_x) < 0.3f && std::abs(err_y) < 0.3f) {
+        state = State::RECOVERING;
+        vel_x = 0;
+        vel_y = 0;
+      }
+    } else if (state == State::RECOVERING) {
+      data.linear_x = 0;
+      data.linear_y = 0;
+
+      // 离线模式没有血量时，不会进此状态；在线模式恢复到90%继续执行原任务。
+      if (!hp_available || hp_recovered) {
+        state = resume_state;
+      }
+    } else if (state == State::STOP) {
+      data.linear_x = 0;
+      data.linear_y = 0;
+    }
+
     {
       std::lock_guard<std::mutex> lock(nav_mutex);
       current_nav_data = data;

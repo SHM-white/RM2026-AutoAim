@@ -10,6 +10,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <thread>
+#include <functional>
 #include <optional>
 
 #include "tools/thread_safe_queue.hpp"
@@ -79,7 +80,9 @@ struct IMU_Forward_Frame
 class DM_IMU
 {
 public:
-  DM_IMU();
+  using QTransform = std::function<Eigen::Quaterniond(Eigen::Quaterniond)>;
+
+  DM_IMU(QTransform q_transform = [](Eigen::Quaterniond q) { return q; });
   ~DM_IMU();
 
   enum class IMU_COMMAND : uint16_t
@@ -112,6 +115,7 @@ public:
     ZERO_ANGLE           = 0x0C01  // 角度置零
   };
   Eigen::Quaterniond imu_at(std::chrono::steady_clock::time_point timestamp);
+  IMU_Data current_data() const;
 
   // IMU operations
   void send_command(IMU_COMMAND command, std::optional<uint8_t> param = std::nullopt);
@@ -139,6 +143,7 @@ private:
   // 双缓冲区，实现无锁的读写分离
   IMU_Data data_buffer_[2]{};
   std::atomic<uint8_t> data_idx_{0};
+  QTransform q_transform_;
 };
 
 }  // namespace io

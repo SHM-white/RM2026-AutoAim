@@ -14,7 +14,7 @@
 
 namespace io
 {
-DM_IMU::DM_IMU() : queue_(5000)
+DM_IMU::DM_IMU(QTransform q_transform) : queue_(5000), q_transform_(q_transform)
 {
   init_serial();
   rec_thread_ = std::thread(&DM_IMU::get_imu_data_thread, this);
@@ -123,6 +123,8 @@ void DM_IMU::get_imu_data_thread()
                              Eigen::AngleAxisd(temp_data.pitch * M_PI / 180, Eigen::Vector3d::UnitY()) *
                              Eigen::AngleAxisd(temp_data.roll * M_PI / 180, Eigen::Vector3d::UnitX());
       q.normalize();
+      q = q_transform_(q);
+      q.normalize();
       queue_.push({q, timestamp});
     } catch (const std::exception & e) { 
       tools::logger()->error("[DM_IMU] error: {}", e.what());
@@ -154,6 +156,11 @@ Eigen::Quaterniond DM_IMU::imu_at(std::chrono::steady_clock::time_point timestam
   Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
 
   return q_c;
+}
+
+IMU_Data DM_IMU::current_data() const {
+  uint8_t read_idx = data_idx_.load(std::memory_order_acquire);
+  return data_buffer_[read_idx]; 
 }
 
 void DM_IMU::send_command(IMU_COMMAND command, std::optional<uint8_t> param) {

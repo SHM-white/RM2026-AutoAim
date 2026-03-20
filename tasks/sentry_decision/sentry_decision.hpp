@@ -9,9 +9,11 @@
 
 #include "io/cboard.hpp"
 #include "io/ros2/ros2.hpp"
+#include "io/dm_imu/dm_imu.hpp"
 
 namespace sentry_decision {
 
+    
 #pragma pack(push, 1)
 struct robot_status_t {
   uint8_t robot_id;
@@ -56,7 +58,7 @@ public:
 
   void referee_callback(uint16_t cmd_id, const uint8_t* data, uint16_t len);
 
-  void start_nav_thread();
+  void start_nav_thread(io::DM_IMU* imu);
   void stop_nav_thread();
 
   io::NavData get_nav_data();
@@ -76,6 +78,8 @@ private:
 
   std::thread nav_thread;
   std::atomic<bool> is_running{false};
+  
+  io::DM_IMU* imu_{nullptr};
 };
 
 } // namespace sentry_decision
