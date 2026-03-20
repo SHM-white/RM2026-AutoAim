@@ -89,20 +89,27 @@ int main(int argc, char * argv[])
 
     io::Command command{false, false, 0, 0};
 
+    static auto last_seen_time = timestamp;
+    if (tracker.state() != "lost") {
+      last_seen_time = timestamp;
+    }
+
     /// 全向感知逻辑
     if (tracker.state() == "lost") {
-      // command = decider.decide(yolo, gimbal_pos, camera);
-      static auto t0 = timestamp;
-      double t = std::chrono::duration<double>(timestamp - t0).count();
-      
-      command.control = true;
-      // 使云台yaw以1.5弧度/秒不断旋转并映射至[-PI, PI)
-      command.yaw = 0.5 * std::sin(t * 1.5) * M_PI;  // 1.5 rad/s的正弦波，幅值为PI
-      // if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
-      
-      // pitch以2 rad/s的速度，在-0.2到+0.2弧度上下摆动
-      command.pitch = 0.2 * std::sin(t * 3.0);
-      command.shoot = false;
+      if (std::chrono::duration<double>(timestamp - last_seen_time).count() > 1.0) {
+        // command = decider.decide(yolo, gimbal_pos, camera);
+        static auto t0 = timestamp;
+        double t = std::chrono::duration<double>(timestamp - t0).count();
+        
+        command.control = true;
+        // 使云台yaw以1.5弧度/秒不断旋转并映射至[-PI, PI)
+        command.yaw = 0.5 * std::sin(t * 1.5) * M_PI;  // 1.5 rad/s的正弦波，幅值为PI
+        // if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
+        
+        // pitch以2 rad/s的速度，在-0.2到+0.2弧度上下摆动
+        command.pitch = 0.2 * std::sin(t * 3.0);
+        command.shoot = false;
+      }
     } else {
       command = aimer.aim(targets, timestamp, gimbal.state().bullet_speed);
     }
