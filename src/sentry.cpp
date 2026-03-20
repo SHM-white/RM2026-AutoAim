@@ -117,6 +117,7 @@ int main(int argc, char * argv[])
       INIT,
       EXPLORING,
       RETURN_HOME_FOR_NEXT_DIR,
+      WAITING_NEXT_DIR,
       MOVING_TO_TARGET,
       RETREATING,
       RECOVERING
@@ -133,6 +134,7 @@ int main(int argc, char * argv[])
 
     auto setup_time = std::chrono::steady_clock::now();
     auto stuck_check_start = std::chrono::steady_clock::now();
+    auto wait_start_time = std::chrono::steady_clock::now();
     float stuck_check_x = 0;
     float stuck_check_y = 0;
     bool is_initialized = false;
@@ -201,6 +203,13 @@ int main(int argc, char * argv[])
         error_x = home_x - current_x;
         error_y = home_y - current_y;
         if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
+            state = State::WAITING_NEXT_DIR;
+            wait_start_time = now;
+        }
+      } else if (state == State::WAITING_NEXT_DIR) {
+        error_x = 0;
+        error_y = 0;
+        if (std::chrono::duration<double>(now - wait_start_time).count() > 2.0) {
             current_dir_idx = (current_dir_idx + 1) % 4; // 尝试下一个方向
             state = State::EXPLORING;
             stuck_check_start = now;
