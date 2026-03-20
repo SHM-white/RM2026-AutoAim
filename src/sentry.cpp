@@ -57,6 +57,13 @@ struct game_robot_HP_t {
   uint16_t ally_outpost_HP;
   uint16_t ally_base_HP;
 };
+
+struct game_status_t {
+  uint8_t game_type : 4;
+  uint8_t game_progress : 4;
+  uint16_t stage_remain_time;
+  uint64_t SyncTimeStamp;
+};
 #pragma pack(pop)
 
 int main(int argc, char * argv[])
@@ -78,6 +85,7 @@ int main(int argc, char * argv[])
   robot_status_t robot_status = {0};
   robot_pos_t robot_pos = {1.0f, 1.0f, 0.0f}; // 初始位置假设为(1, 1)
   game_robot_HP_t game_robot_hp = {0};
+  game_status_t game_status = {0};
 
   // io::CBoard cboard(config_path);
   io::Gimbal gimbal(config_path, nullptr, [&](uint16_t cmd_id, const uint8_t* data, uint16_t len){
@@ -88,6 +96,8 @@ int main(int argc, char * argv[])
       std::memcpy(&robot_pos, data, sizeof(robot_pos_t));
     } else if (cmd_id == 0x0003 && len >= sizeof(game_robot_HP_t)) {
       std::memcpy(&game_robot_hp, data, sizeof(game_robot_HP_t));
+    } else if (cmd_id == 0x0001 && len >= sizeof(game_status_t)) {
+      std::memcpy(&game_status, data, sizeof(game_status_t));
     }
   }, nullptr);
   io::Camera camera(config_path);
@@ -327,6 +337,21 @@ int main(int argc, char * argv[])
       nav_data = current_nav_data;
     }
     
+    uint8_t cur_game_progress = 0;
+    {
+      std::lock_guard<std::mutex> lock(referee_mutex);
+      cur_game_progress = game_status.game_progress;
+    }
+
+    // game_progress == 4 代表比赛中，未开始比赛前不进行任何动作
+    if (cur_game_progress != 4) {
+      command.control = false;
+      command.shoot = false;
+      nav_data.linear_x = 0;
+      nav_data.linear_y = 0;
+      nav_data.angular_z = 0;
+    }
+
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
     gimbal.send_cmd_vel(nav_data);
