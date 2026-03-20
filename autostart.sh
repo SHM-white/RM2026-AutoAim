@@ -1,6 +1,7 @@
 #!/bin/bash
 sleep 5
 cd /home/xtyf/RM2026-AutoAim/
+source /opt/ros/humble/setup.bash
 screen \
     -S autoaim \
     -L \

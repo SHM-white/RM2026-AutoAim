@@ -33,7 +33,11 @@ for TARGET_PROGRAM in "${TARGET_PROGRAMS[@]}"; do
             echo "[Watchdog] $(date '+%Y-%m-%d %H:%M:%S') 正在启动程序: $TARGET_PROGRAM"
             echo "========================================================="
             
-            source /home/xtyf/.bashrc  # 加载环境变量（如果需要）
+            source /opt/ros/humble/setup.bash
+            if [ -f /home/xtyf/ros_ws/install/setup.bash ]; then
+                source /home/xtyf/ros_ws/install/setup.bash
+            fi
+            
             # 运行目标程序
             $TARGET_PROGRAM
             

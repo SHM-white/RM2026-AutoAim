@@ -330,6 +330,22 @@ int main(int argc, char * argv[])
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
     gimbal.send_cmd_vel(nav_data);
+#ifndef NDEBUG
+    nlohmann::json json;
+    json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
+    json["command"] = {
+      {"control", command.control},
+      {"shoot", command.shoot},
+      {"yaw", command.yaw},
+      {"pitch", command.pitch}
+    };
+    json["nav_data"] = {
+      {"linear_x", nav_data.linear_x},
+      {"linear_y", nav_data.linear_y},
+      {"angular_z", nav_data.angular_z}
+    };
+    plotter.plot(json);
+#endif
 
     /// ROS2通信
     // Eigen::Vector4d target_info = decider.get_target_info(armors, targets);
