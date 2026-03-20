@@ -66,8 +66,8 @@ int main(int argc, char * argv[])
 
   while (!exiter.exit()) {
     camera.read(img, timestamp);
-    Eigen::Quaterniond q = dm_imu.imu_at(timestamp);
-    auto q_2 = gimbal.q(timestamp);
+    //Eigen::Quaterniond q = dm_imu.imu_at(timestamp);
+    auto q = gimbal.q(timestamp);
     // recorder.record(img, q, timestamp);
 
     /// 自瞄核心逻辑
