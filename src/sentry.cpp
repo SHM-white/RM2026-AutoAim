@@ -77,35 +77,54 @@ int main(int argc, char * argv[])
 
     auto armors = yolo.detect(img);
 
-    decider.get_invincible_armor(ros2.subscribe_enemy_status());
+    // decider.get_invincible_armor(ros2.subscribe_enemy_status()); // 相关接口尚屏蔽
 
-    decider.armor_filter(armors);
+    // decider.armor_filter(armors);
 
     // decider.get_auto_aim_target(armors, ros2.subscribe_autoaim_target());
 
-    decider.set_priority(armors);
+    // decider.set_priority(armors);
 
     auto targets = tracker.track(armors, timestamp);
 
     io::Command command{false, false, 0, 0};
 
     /// 全向感知逻辑
-    if (tracker.state() == "lost")
-      command = decider.decide(yolo, gimbal_pos, camera);
-    else
+    if (tracker.state() == "lost") {
+      // command = decider.decide(yolo, gimbal_pos, camera);
+      static auto t0 = timestamp;
+      double t = std::chrono::duration<double>(timestamp - t0).count();
+      
+      command.control = true;
+      // 使云台yaw以1.5弧度/秒不断旋转并映射至[-PI, PI)
+      command.yaw = std::fmod(t * 1.5, 2 * M_PI);
+      if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
+      
+      // pitch以2 rad/s的速度，在-0.2到+0.2弧度上下摆动
+      command.pitch = 0.2 * std::sin(t * 2.0);
+      command.shoot = false;
+    } else {
       command = aimer.aim(targets, timestamp, gimbal.state().bullet_speed);
+    }
 
     /// 发射逻辑
-    command.shoot = shooter.shoot(command, aimer, targets, gimbal_pos);
+    if (tracker.state() != "lost") {
+      Eigen::Quaterniond current_q = gimbal.q(timestamp);
+      Eigen::Vector3d gimbal_pos_shoot = tools::eulers(current_q, 2, 1, 0);
+      command.shoot = shooter.shoot(command, aimer, targets, gimbal_pos_shoot);
+    } else {
+      command.shoot = false;
+    }
+
     auto nav_data = ros2.get_last_cmd_vel_data();
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
     gimbal.send_cmd_vel(nav_data);
 
     /// ROS2通信
-    Eigen::Vector4d target_info = decider.get_target_info(armors, targets);
+    // Eigen::Vector4d target_info = decider.get_target_info(armors, targets);
 
-    ros2.publish(target_info);
+    // ros2.publish(target_info);
   }
   return 0;
 }
