@@ -114,16 +114,28 @@ int main(int argc, char * argv[])
 
   auto NavThread = std::thread([&]() { 
     enum class State {
+      INIT,
+      EXPLORING,
+      RETURN_HOME_FOR_NEXT_DIR,
       MOVING_TO_TARGET,
       RETREATING,
       RECOVERING
-    } state = State::MOVING_TO_TARGET;
+    } state = State::INIT;
     
-    // 假设初始位置为 (1, 1)，沿 x 轴走 6m 到达 (7, 1)
-    float target_x = 1.0f;
-    float target_y = 7.0f;
-    float home_x = 1.0f;
-    float home_y = 1.0f;
+    float target_x = 0;
+    float target_y = 0;
+    float home_x = 0;
+    float home_y = 0;
+    
+    int current_dir_idx = 0;
+    // 0: +x, 1: -y, 2: -x, 3: +y 
+    float dirs[4][2] = {{1, 0}, {0, -1}, {-1, 0}, {0, 1}};
+
+    auto setup_time = std::chrono::steady_clock::now();
+    auto stuck_check_start = std::chrono::steady_clock::now();
+    float stuck_check_x = 0;
+    float stuck_check_y = 0;
+    bool is_initialized = false;
 
     auto start_time = std::chrono::steady_clock::now();
     while (!exiter.exit()) {
@@ -145,8 +157,57 @@ int main(int argc, char * argv[])
       float error_x = 0;
       float error_y = 0;
 
+      if (!is_initialized) {
+        if (std::chrono::duration<double>(now - setup_time).count() > 1.0) {
+          home_x = current_x;
+          home_y = current_y;
+          is_initialized = true;
+          state = State::EXPLORING;
+          stuck_check_start = now;
+          stuck_check_x = current_x;
+          stuck_check_y = current_y;
+        } else {
+          std::this_thread::sleep_for(std::chrono::milliseconds(20));
+          continue;
+        }
+      }
+
       // 状态机判断
-      if (state == State::MOVING_TO_TARGET) {
+      if (state == State::EXPLORING) {
+        float try_target_x = home_x + dirs[current_dir_idx][0] * 3.0f;
+        float try_target_y = home_y + dirs[current_dir_idx][1] * 3.0f;
+        
+        error_x = try_target_x - current_x;
+        error_y = try_target_y - current_y;
+
+        // 判断是否到达3m无障碍
+        if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
+           target_x = home_x + dirs[current_dir_idx][0] * 6.0f;
+           target_y = home_y + dirs[current_dir_idx][1] * 6.0f;
+           state = State::MOVING_TO_TARGET;
+        } else {
+           // 检查是否受阻(卡住)
+           if (std::chrono::duration<double>(now - stuck_check_start).count() > 2.0) {
+             float dist_moved = std::hypot(current_x - stuck_check_x, current_y - stuck_check_y);
+             if (dist_moved < 0.2f) { // 2秒移动低于0.2m被视为卡住
+               state = State::RETURN_HOME_FOR_NEXT_DIR;
+             }
+             stuck_check_start = now;
+             stuck_check_x = current_x;
+             stuck_check_y = current_y;
+           }
+        }
+      } else if (state == State::RETURN_HOME_FOR_NEXT_DIR) {
+        error_x = home_x - current_x;
+        error_y = home_y - current_y;
+        if (std::abs(error_x) < 0.2f && std::abs(error_y) < 0.2f) {
+            current_dir_idx = (current_dir_idx + 1) % 4; // 尝试下一个方向
+            state = State::EXPLORING;
+            stuck_check_start = now;
+            stuck_check_x = current_x;
+            stuck_check_y = current_y;
+        }
+      } else if (state == State::MOVING_TO_TARGET) {
         if (current_hp > 0 && current_hp < max_hp * 0.3) {  // 低于 30% 血量视作低血量
           state = State::RETREATING;
         } else {
