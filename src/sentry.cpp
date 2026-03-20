@@ -111,11 +111,11 @@ int main(int argc, char * argv[])
         
         command.control = true;
         // 使云台yaw以1.5弧度/秒不断旋转并映射至[-PI, PI)
-        command.yaw = 0.5 * std::sin(t * 1.5) * M_PI;  // 1.5 rad/s的正弦波，幅值为PI
+        command.yaw = 0.5 * std::sin(t * 0.6) * M_PI;  // 1.5 rad/s的正弦波，幅值为PI
         // if (command.yaw > M_PI) command.yaw -= 2 * M_PI;
         
         // pitch以2 rad/s的速度，在-0.2到+0.2弧度上下摆动
-        command.pitch = 0.2 * std::sin(t * 3.0);
+        command.pitch = 15 / 57.3 * std::sin(t * 5.0) + 7.5 / 57.3;  // 2 rad/s的正弦波，幅值为0.2，中心位置为-7.5度
         command.shoot = false;
       }
     } else {
@@ -136,13 +136,13 @@ int main(int argc, char * argv[])
     uint8_t cur_game_progress = decider_sentry.get_game_progress();
 
     // game_progress == 4 代表比赛中，未开始比赛前不进行任何动作
-    if (cur_game_progress != 4) {
-      command.control = false;
-      command.shoot = false;
-      nav_data.linear_x = 0;
-      nav_data.linear_y = 0;
-      nav_data.angular_z = 0;
-    }
+    // if (cur_game_progress != 4) {
+    //   command.control = false;
+    //   command.shoot = false;
+    //   nav_data.linear_x = 0;
+    //   nav_data.linear_y = 0;
+    //   nav_data.angular_z = 0;
+    // }
 
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);

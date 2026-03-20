@@ -127,7 +127,7 @@ void Gimbal::send_cmd_vel(const std::optional<const NavData> & nav_data)
 {
   if (!nav_data.has_value()) return;
 
-  tx_data_nav.linear_x = nav_data->angular_x;
+  tx_data_nav.linear_x = nav_data->linear_x;
   tx_data_nav.linear_y = nav_data->linear_y;
   tx_data_nav.linear_z = nav_data->linear_z;
   tx_data_nav.angular_x = nav_data->angular_x;
