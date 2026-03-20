@@ -130,6 +130,8 @@ find_package(sp_msgs QUIET)
 # 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
 if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND AND sp_msgs_FOUND)
     # 编译 sentry 和 publish_test
+    add_subdirectory(tasks/sentry_decision)
+
     add_executable(sentry src/sentry.cpp)
     add_executable(sentry_bp src/sentry_bp.cpp)
     add_executable(sentry_debug src/sentry_debug.cpp)
@@ -142,7 +144,7 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_
     add_executable(cmd_vel_subscriber_test tests/cmd_vel_subscriber_test.cpp)
     add_executable(cmd_vel_publisher_test tests/cmd_vel_publisher_test.cpp)
 
-    target_link_libraries(sentry ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
+    target_link_libraries(sentry ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception sentry_decision tools io)
     target_link_libraries(sentry_bp ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
     target_link_libraries(sentry_debug ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
     target_link_libraries(sentry_test_new ${OpenCV_LIBS} fmt::fmt yaml-cpp auto_aim omniperception tools io)
