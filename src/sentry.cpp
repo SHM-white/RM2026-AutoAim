@@ -135,13 +135,15 @@ int main(int argc, char * argv[])
     uint8_t cur_game_progress = decider_sentry.get_game_progress();
 
     // game_progress == 4 代表比赛中，未开始比赛前不进行任何动作
-    // if (cur_game_progress != 4) {
-    //   command.control = false;
-    //   command.shoot = false;
-    //   nav_data.linear_x = 0;
-    //   nav_data.linear_y = 0;
-    //   nav_data.angular_z = 0;
-    // }
+  #ifdef NDEBUG
+    if (cur_game_progress != 4) {
+      command.control = false;
+      command.shoot = false;
+      nav_data.linear_x = 0;
+      nav_data.linear_y = 0;
+      nav_data.angular_z = 0;
+    }
+#endif
 
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);

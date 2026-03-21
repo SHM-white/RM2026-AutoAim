@@ -61,7 +61,12 @@ void SentryDecider::nav_loop() {
     RETREAT_TO_HOME,
     RECOVERING,
     STOP
-  } state = State::INIT;
+  } state = 
+#ifndef NDEBUG
+    State::MOVING_OUT;
+#else
+    State::INIT;
+#endif
 
   float pos_x = 0;
   float pos_y = 0;
