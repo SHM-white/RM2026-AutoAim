@@ -56,6 +56,7 @@ void SentryDecider::nav_loop() {
   enum class State {
     INIT,
     MOVING_OUT,
+    STAYING_AT_POSITION,
     RETURNING_HOME,
     WAITING_NEXT_DIR,
     RETREAT_TO_HOME,
@@ -71,6 +72,7 @@ void SentryDecider::nav_loop() {
   const float out_speed_mps = 1.0f;
   const float home_speed_mps = -1.0f;
   const float move_duration_s = 7.0f;
+  const float stay_duration_s = 10.0f;
   const float wait_duration_s = 10.0f;
 
   State resume_state = State::MOVING_OUT;
@@ -98,6 +100,7 @@ void SentryDecider::nav_loop() {
     bool hp_recovered = hp_available && current_hp >= static_cast<uint16_t>(max_hp * 0.9f);
     bool in_mission_stage =
       state == State::MOVING_OUT ||
+      state == State::STAYING_AT_POSITION ||
       state == State::RETURNING_HOME ||
       state == State::WAITING_NEXT_DIR;
 
@@ -112,7 +115,7 @@ void SentryDecider::nav_loop() {
       data.linear_y = 0;
 
       if (std::chrono::duration<double>(now - state_start_time).count() >= move_duration_s) {
-        state = State::RETURNING_HOME;
+        state = State::STAYING_AT_POSITION;
         state_start_time = now;
       }
     } else if (state == State::RETURNING_HOME) {
@@ -146,6 +149,14 @@ void SentryDecider::nav_loop() {
       // 离线模式没有血量时，不会进此状态；在线模式恢复到90%继续执行原任务。
       if (!hp_available || hp_recovered) {
         state = resume_state;
+      }
+    } else if (state == State::STAYING_AT_POSITION) {
+      data.linear_x = 0;
+      data.linear_y = 0;
+
+      if (std::chrono::duration<double>(now - state_start_time).count() >= stay_duration_s) {
+        state = State::RETURNING_HOME;
+        state_start_time = now;
       }
     } else if (state == State::STOP) {
       data.linear_x = 0;
