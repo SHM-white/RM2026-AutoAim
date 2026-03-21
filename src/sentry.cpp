@@ -135,7 +135,7 @@ int main(int argc, char * argv[])
     uint8_t cur_game_progress = decider_sentry.get_game_progress();
 
     // game_progress == 4 代表比赛中，未开始比赛前不进行任何动作
-  #ifdef NDEBUG
+#ifdef NDEBUG
     if (cur_game_progress != 4) {
       command.control = false;
       command.shoot = false;
