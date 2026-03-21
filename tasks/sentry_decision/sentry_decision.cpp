@@ -55,9 +55,9 @@ uint8_t SentryDecider::get_game_progress() {
 void SentryDecider::nav_loop() {
   enum class State {
     INIT,
-    STAGE1_MOVE_RIGHT,
-    STAGE2_MOVE_FORWARD,
-    STAGE3_MOVE_LEFT,
+    MOVING_OUT,
+    RETURNING_HOME,
+    WAITING_NEXT_DIR,
     RETREAT_TO_HOME,
     RECOVERING,
     STOP
@@ -70,11 +70,19 @@ void SentryDecider::nav_loop() {
 
   float initial_yaw = 0;
   bool is_initialized = false;
-  float stage3_start_y = 0;
-  State resume_state = State::STAGE1_MOVE_RIGHT;
+  // 方向序列定义在初始化坐标系中: +X前, -Y右, -X后, +Y左
+  const float dirs[4][2] = {{1.0f, 0.0f}, {0.0f, -1.0f}, {-1.0f, 0.0f}, {0.0f, 1.0f}};
+  // 用户要求优先 IMU x 轴左侧(当前安装对应云台初始方向右侧) -> 右侧方向(-Y)
+  int current_dir_idx = 1;
+
+  const float out_distance_m = 8.0f;
+  const float slow_down_distance_m = 6.0f;
+
+  State resume_state = State::MOVING_OUT;
 
   auto setup_time = std::chrono::steady_clock::now();
   auto last_time = std::chrono::steady_clock::now();
+  auto wait_start_time = std::chrono::steady_clock::now();
 
   while (is_running) {
     auto now = std::chrono::steady_clock::now();
@@ -102,7 +110,7 @@ void SentryDecider::nav_loop() {
       if (std::chrono::duration<double>(now - setup_time).count() > 1.5) {
         initial_yaw = imu_data.yaw;
         is_initialized = true;
-        state = State::STAGE1_MOVE_RIGHT;
+        state = State::MOVING_OUT;
         pos_x = 0;
         pos_y = 0;
         vel_x = 0;
@@ -144,54 +152,51 @@ void SentryDecider::nav_loop() {
     bool low_hp = hp_available && current_hp < static_cast<uint16_t>(max_hp * 0.3f);
     bool hp_recovered = hp_available && current_hp >= static_cast<uint16_t>(max_hp * 0.9f);
     bool in_mission_stage =
-      state == State::STAGE1_MOVE_RIGHT ||
-      state == State::STAGE2_MOVE_FORWARD ||
-      state == State::STAGE3_MOVE_LEFT;
+      state == State::MOVING_OUT ||
+      state == State::RETURNING_HOME ||
+      state == State::WAITING_NEXT_DIR;
 
     if (in_mission_stage && low_hp) {
       resume_state = state;
       state = State::RETREAT_TO_HOME;
     }
 
-    if (state == State::STAGE1_MOVE_RIGHT) {
-      // 在初始坐标下，Y为左，向右则为负Y方向，全长大约8m
-      if (pos_y <= -6.0f) {
-        data.linear_x = 0;
-        data.linear_y = -0.2f; // 接近6~7m时减速
-      } else {
-        data.linear_x = 0;
-        data.linear_y = -0.5f; 
-      }
-      
-      // 检测撞墙或者超出极限
-      if (hit_wall || pos_y <= -8.0f) {
-        state = State::STAGE2_MOVE_FORWARD;
+    if (state == State::MOVING_OUT) {
+      float dir_x = dirs[current_dir_idx][0];
+      float dir_y = dirs[current_dir_idx][1];
+      float progress = pos_x * dir_x + pos_y * dir_y;
+
+      float speed = progress >= slow_down_distance_m ? 0.2f : 0.5f;
+      data.linear_x = speed * dir_x;
+      data.linear_y = speed * dir_y;
+
+      if (hit_wall || progress >= out_distance_m) {
+        state = State::RETURNING_HOME;
         vel_x = 0;
         vel_y = 0;
-        pos_y = -8.0f; // 撞墙后锁定到边界估计值
       }
-    } else if (state == State::STAGE2_MOVE_FORWARD) {
-      // 向前对应的方向是X方向正向，界限约7.5m
-      data.linear_x = 0.5f;
-      data.linear_y = 0;
-      
-      if (hit_wall || pos_x >= 7.5f) {
-        state = State::STAGE3_MOVE_LEFT;
+    } else if (state == State::RETURNING_HOME) {
+      float err_x = -pos_x;
+      float err_y = -pos_y;
+      float kp_home = 0.4f;
+      data.linear_x = std::clamp(kp_home * err_x, -0.4f, 0.4f);
+      data.linear_y = std::clamp(kp_home * err_y, -0.4f, 0.4f);
+
+      if (std::abs(err_x) < 0.3f && std::abs(err_y) < 0.3f) {
+        state = State::WAITING_NEXT_DIR;
+        wait_start_time = now;
         vel_x = 0;
         vel_y = 0;
-        pos_x = 7.5f;
-        pos_y = -8.0f;
-        stage3_start_y = pos_y; // 记录处于第3阶段初始起点位置
+        pos_x = 0;
+        pos_y = 0;
       }
-    } else if (state == State::STAGE3_MOVE_LEFT) {
-      // 向左对应的方向是Y方向正向，需走大约4m (回到中点)
+    } else if (state == State::WAITING_NEXT_DIR) {
       data.linear_x = 0;
-      data.linear_y = 0.5f;
-      
-      if (pos_y - stage3_start_y >= 4.0f) {
-        state = State::STOP;
-        vel_x = 0;
-        vel_y = 0;
+      data.linear_y = 0;
+
+      if (std::chrono::duration<double>(now - wait_start_time).count() > 1.0) {
+        current_dir_idx = (current_dir_idx + 1) % 4;
+        state = State::MOVING_OUT;
       }
     } else if (state == State::RETREAT_TO_HOME) {
       // 低血量返航：回到起点(0,0)。
