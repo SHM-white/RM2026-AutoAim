@@ -148,7 +148,7 @@ int main(int argc, char * argv[])
     gimbal.send(command);
     gimbal.send_imu_forward(dm_imu);
     gimbal.send_cmd_vel(nav_data);
-#ifdef NDEBUG
+#ifndef NDEBUG
     nlohmann::json json;
     json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
     json["command"] = {
