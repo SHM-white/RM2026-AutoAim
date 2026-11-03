@@ -103,7 +103,6 @@ void Gimbal::send(const io::Command & cmd) {
 
 void Gimbal::send(io::VisionToGimbal VisionToGimbal)
 {
-  if (!feedback_fresh()) return;
   tx_data_gimbal.mode = VisionToGimbal.mode;
   tx_data_gimbal.yaw = VisionToGimbal.yaw;
   tx_data_gimbal.yaw_vel = VisionToGimbal.yaw_vel;
@@ -120,7 +119,6 @@ void Gimbal::send(
   bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
   float pitch_acc)
 {
-  if (!feedback_fresh()) return;
   tx_data_gimbal.mode = control ? (fire ? 2 : 1) : 0;
   tx_data_gimbal.yaw = yaw;
   tx_data_gimbal.yaw_vel = yaw_vel;
@@ -134,7 +132,7 @@ void Gimbal::send(
 }
 
 void Gimbal::send_imu_forward(const DM_IMU & imu) {
-  if (!feedback_fresh()) return;
+  if (!feedback_fresh() || !imu.connected()) return;
   IMU_Forward_Frame frame{};
   frame.data = imu.current_data();
   frame.crc16 = tools::get_crc16(reinterpret_cast<const uint8_t *>(&frame),
@@ -372,6 +370,16 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
 }
 
 void Gimbal::send_gimbal_data() {
+  // If telemetry is stale, send an explicit NO_CONTROL/NO_FIRE packet
+  // whenever the UART is still alive. Never replay a pre-disconnect aim.
+  if (!feedback_fresh()) {
+    tx_data_gimbal.mode = 0;
+    tx_data_gimbal.yaw = tx_data_gimbal.yaw_vel = tx_data_gimbal.yaw_acc = 0.0f;
+    tx_data_gimbal.pitch = tx_data_gimbal.pitch_vel = tx_data_gimbal.pitch_acc = 0.0f;
+    tx_data_gimbal.crc16 = tools::get_crc16(
+      reinterpret_cast<const uint8_t *>(&tx_data_gimbal),
+      sizeof(tx_data_gimbal) - sizeof(tx_data_gimbal.crc16));
+  }
   if (!serial_.write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal),
                      sizeof(tx_data_gimbal))) return;
   if (after_send_gimbal_data_) {
