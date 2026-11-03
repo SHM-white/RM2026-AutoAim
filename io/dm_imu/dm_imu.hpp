@@ -141,7 +141,7 @@ private:
   ReconnectingSerial serial_;
   std::thread rec_thread_;
 
-  tools::ThreadSafeQueue<IMUData> queue_;
+  tools::ThreadSafeQueue<IMUData, true> queue_;
   mutable std::mutex interpolation_mutex_;
   mutable std::mutex feedback_mutex_;
   std::chrono::steady_clock::time_point last_valid_packet_{};

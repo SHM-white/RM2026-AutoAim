@@ -80,7 +80,7 @@ private:
   uint64_t last_feedback_generation_ = 0;
   mutable std::mutex q_mutex_;
   bool feedback_fresh() const;
-  tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>>
+  tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>, true>
     queue_{1000};
 
   bool read(uint8_t * buffer, size_t size);
