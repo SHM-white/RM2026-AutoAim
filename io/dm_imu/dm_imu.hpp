@@ -3,6 +3,7 @@
 
 #include <math.h>
 #include <serial/serial.h>
+#include "io/reconnecting_serial.hpp"
 
 #include <Eigen/Geometry>
 #include <array>
@@ -12,6 +13,8 @@
 #include <thread>
 #include <functional>
 #include <optional>
+#include <mutex>
+#include <string>
 
 #include "tools/thread_safe_queue.hpp"
 
@@ -82,7 +85,10 @@ class DM_IMU
 public:
   using QTransform = std::function<Eigen::Quaterniond(Eigen::Quaterniond)>;
 
-  DM_IMU(QTransform q_transform = [](Eigen::Quaterniond q) { return q; });
+  // Explicit port overrides SKYWALKER_IMU_PORT, which overrides /dev/ttyACM0.
+  DM_IMU(QTransform q_transform = [](Eigen::Quaterniond q) { return q; },
+         const std::string & port = "");
+  bool connected() const;
   ~DM_IMU();
 
   enum class IMU_COMMAND : uint16_t
@@ -128,14 +134,20 @@ private:
     std::chrono::steady_clock::time_point timestamp;
   };
 
-  void init_serial();
+  bool init_serial();
+  bool write_command(IMU_COMMAND command, std::optional<uint8_t> param);
   void get_imu_data_thread();
 
-  serial::Serial serial_;
+  ReconnectingSerial serial_;
   std::thread rec_thread_;
 
   tools::ThreadSafeQueue<IMUData> queue_;
-  IMUData data_ahead_, data_behind_;
+  mutable std::mutex interpolation_mutex_;
+  mutable std::mutex feedback_mutex_;
+  std::chrono::steady_clock::time_point last_valid_packet_{};
+  uint64_t last_packet_generation_ = 0;
+  uint64_t configured_generation_ = 0;
+  bool was_initialized_ = false;
 
   std::atomic<bool> stop_thread_{false};
   IMU_Receive_Frame receive_data{};  //receive data frame
