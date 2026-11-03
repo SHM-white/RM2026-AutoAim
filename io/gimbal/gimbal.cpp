@@ -1,5 +1,7 @@
 #include "gimbal.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include "tools/crc.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
@@ -72,19 +74,27 @@ std::string Gimbal::str(GimbalMode mode) const
 
 Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
 {
+  // Never block control on a disconnected or silent serial port.
   if (!feedback_fresh()) return Eigen::Quaterniond::Identity();
-  while (true) {
-    auto [q_a, t_a] = queue_.pop();
-    auto [q_b, t_b] = queue_.front();
-    auto t_ab = tools::delta_time(t_a, t_b);
-    auto t_ac = tools::delta_time(t_a, t);
-    auto k = t_ac / t_ab;
-    Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
-    if (t < t_a) return q_c;
-    if (!(t_a < t && t <= t_b)) continue;
+  std::lock_guard<std::mutex> lock(q_mutex_);
 
-    return q_c;
+  using Sample = std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>;
+  Sample a{}, b{};
+  if (!queue_.try_front(b)) return Eigen::Quaterniond::Identity();
+  if (t <= std::get<1>(b)) return std::get<0>(b).normalized();
+
+  while (queue_.try_pop_if_more_than_one(a)) {
+    if (!queue_.try_front(b)) return std::get<0>(a).normalized();
+    const auto ta = std::get<1>(a), tb = std::get<1>(b);
+    if (t <= tb) {
+      const double delta = std::chrono::duration<double>(tb - ta).count();
+      if (delta <= 0.0) return std::get<0>(b).normalized();
+      const double k = std::clamp(std::chrono::duration<double>(t - ta).count() / delta,
+                                  0.0, 1.0);
+      return std::get<0>(a).slerp(k, std::get<0>(b)).normalized();
+    }
   }
+  return std::get<0>(b).normalized();
 }
 
 void Gimbal::send(const io::Command & cmd) {
@@ -200,7 +210,7 @@ void Gimbal::read_thread()
       auto t = std::chrono::steady_clock::now();
 
       // Use a local buffer to avoid member-variable aliasing across iterations
-      static GimbalToVision rx_pkt;
+      GimbalToVision rx_pkt{};
       rx_pkt.head[0] = head_byte[0];
       rx_pkt.head[1] = head_byte[1];
 
@@ -209,6 +219,7 @@ void Gimbal::read_thread()
             sizeof(rx_pkt) - sizeof(rx_pkt.head))) {
         continue;
       }
+      if (active_generation != serial_.generation()) continue;
       auto crc16_passed = tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt));
       tools::logger()->debug(
         "[Gimbal] Received GimbalToVision packet: yaw={:.2f}, pitch={:.2f}, crc16=0x{:04X}, received_crc16=0x{:04X}, crc16_passed={}",
@@ -361,7 +372,8 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
 }
 
 void Gimbal::send_gimbal_data() {
-  serial_.write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
+  if (!serial_.write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal),
+                     sizeof(tx_data_gimbal))) return;
   if (after_send_gimbal_data_) {
     after_send_gimbal_data_();
   }

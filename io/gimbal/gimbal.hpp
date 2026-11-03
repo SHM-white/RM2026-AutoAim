@@ -78,6 +78,7 @@ private:
   GimbalState state_{};
   std::chrono::steady_clock::time_point last_feedback_{};
   uint64_t last_feedback_generation_ = 0;
+  mutable std::mutex q_mutex_;
   bool feedback_fresh() const;
   tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>>
     queue_{1000};
