@@ -12,7 +12,7 @@
 #include <optional>
 #include <vector>
 
-#include "serial/serial.h"
+#include "io/reconnecting_serial.hpp"
 #include "tools/thread_safe_queue.hpp"
 #include "io/command.hpp"
 #include "io/vision_protocol.hpp"
@@ -63,10 +63,10 @@ public:
 
   void send(const io::Command & cmd);
   void send(io::VisionToGimbal VisionToGimbal);
-  void send_imu_forward(const DM_IMU & imu) const;
+  void send_imu_forward(const DM_IMU & imu);
 
 private:
-  serial::Serial serial_;
+  ReconnectingSerial serial_;
 
   std::thread thread_;
   std::atomic<bool> quit_ = false;
@@ -75,15 +75,17 @@ private:
   VisionToGimbal tx_data_gimbal;
 
   GimbalMode mode_ = GimbalMode::IDLE;
-  GimbalState state_;
+  GimbalState state_{};
+  std::chrono::steady_clock::time_point last_feedback_{};
+  uint64_t last_feedback_generation_ = 0;
+  bool feedback_fresh() const;
   tools::ThreadSafeQueue<std::tuple<Eigen::Quaterniond, std::chrono::steady_clock::time_point>>
     queue_{1000};
 
   bool read(uint8_t * buffer, size_t size);
   void read_thread();
-  void reconnect();
   void parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len);
-  void send_gimbal_data() const;
+  void send_gimbal_data();
 
   RefereeCallback referee_callback_;
   NavRefereeCallback nav_referee_callback_;

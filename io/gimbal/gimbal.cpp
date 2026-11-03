@@ -16,26 +16,12 @@ Gimbal::Gimbal(const std::string & config_path)
 {}
 
 Gimbal::Gimbal(const std::string & config_path, AfterSendGimbalData after_send_gimbal_data, RefereeCallback referee_callback, NavRefereeCallback nav_referee_callback)
-: after_send_gimbal_data_(std::move(after_send_gimbal_data)), referee_callback_(std::move(referee_callback)), nav_referee_callback_(std::move(nav_referee_callback))
+: serial_(tools::read<std::string>(tools::load(config_path), "com_port"), 115200, 80, "Gimbal"),
+  after_send_gimbal_data_(std::move(after_send_gimbal_data)), referee_callback_(std::move(referee_callback)), nav_referee_callback_(std::move(nav_referee_callback))
 {
-  auto yaml = tools::load(config_path);
-  auto com_port = tools::read<std::string>(yaml, "com_port");
-
-  try {
-    serial_.setPort(com_port);
-    serial_.setBaudrate(115200);
-    serial::Timeout to = serial::Timeout::simpleTimeout(1000);
-    serial_.setTimeout(to);
-    serial_.open();
-  } catch (const std::exception & e) {
-    tools::logger()->error("[Gimbal] Failed to open serial: {}", e.what());
-    exit(1);
-  }
-
+  // Start even when the USB cable is absent; read_thread retries it.
+  serial_.ensure_open();
   thread_ = std::thread(&Gimbal::read_thread, this);
-
-  queue_.pop();
-  tools::logger()->info("[Gimbal] First q received.");
 }
 
 Gimbal::~Gimbal()
@@ -45,14 +31,25 @@ Gimbal::~Gimbal()
   serial_.close();
 }
 
+bool Gimbal::feedback_fresh() const
+{
+  if (!serial_.connected()) return false;
+  std::lock_guard<std::mutex> lock(mutex_);
+  return last_feedback_generation_ == serial_.generation() &&
+         last_feedback_ != std::chrono::steady_clock::time_point{} &&
+         std::chrono::steady_clock::now() - last_feedback_ < std::chrono::milliseconds(500);
+}
+
 GimbalMode Gimbal::mode() const
 {
+  if (!feedback_fresh()) return GimbalMode::IDLE;
   std::lock_guard<std::mutex> lock(mutex_);
   return mode_;
 }
 
 GimbalState Gimbal::state() const
 {
+  if (!feedback_fresh()) return {};
   std::lock_guard<std::mutex> lock(mutex_);
   return state_;
 }
@@ -75,6 +72,7 @@ std::string Gimbal::str(GimbalMode mode) const
 
 Eigen::Quaterniond Gimbal::q(std::chrono::steady_clock::time_point t)
 {
+  if (!feedback_fresh()) return Eigen::Quaterniond::Identity();
   while (true) {
     auto [q_a, t_a] = queue_.pop();
     auto [q_b, t_b] = queue_.front();
@@ -95,6 +93,7 @@ void Gimbal::send(const io::Command & cmd) {
 
 void Gimbal::send(io::VisionToGimbal VisionToGimbal)
 {
+  if (!feedback_fresh()) return;
   tx_data_gimbal.mode = VisionToGimbal.mode;
   tx_data_gimbal.yaw = VisionToGimbal.yaw;
   tx_data_gimbal.yaw_vel = VisionToGimbal.yaw_vel;
@@ -111,6 +110,7 @@ void Gimbal::send(
   bool control, bool fire, float yaw, float yaw_vel, float yaw_acc, float pitch, float pitch_vel,
   float pitch_acc)
 {
+  if (!feedback_fresh()) return;
   tx_data_gimbal.mode = control ? (fire ? 2 : 1) : 0;
   tx_data_gimbal.yaw = yaw;
   tx_data_gimbal.yaw_vel = yaw_vel;
@@ -123,16 +123,25 @@ void Gimbal::send(
   send_gimbal_data();
 }
 
-void Gimbal::send_imu_forward(const DM_IMU & imu) const {
-  imu.forward_data(serial_);
+void Gimbal::send_imu_forward(const DM_IMU & imu) {
+  if (!feedback_fresh()) return;
+  IMU_Forward_Frame frame{};
+  frame.data = imu.current_data();
+  frame.crc16 = tools::get_crc16(reinterpret_cast<const uint8_t *>(&frame),
+                                sizeof(frame) - sizeof(frame.crc16));
+  serial_.write(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame));
 }
 
 bool Gimbal::read(uint8_t * buffer, size_t size)
 {
   try {
+    if (!serial_.connected()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      return false;
+    }
     return serial_.read(buffer, size) == size;
   } catch (const std::exception & e) {
-    // tools::logger()->warn("[Gimbal] Failed to read serial: {}", e.what());
+    tools::logger()->warn("[Gimbal] Unexpected read failure: {}", e.what());
     return false;
   }
 }
@@ -140,18 +149,33 @@ bool Gimbal::read(uint8_t * buffer, size_t size)
 void Gimbal::read_thread()
 {
   tools::logger()->info("[Gimbal] read_thread started.");
-  int error_count = 0;
+  uint64_t active_generation = 0;
 
 #ifndef NDEBUG
   auto plotter = tools::Plotter{};
 #endif
 
   while (!quit_) {
-    if (error_count > 5000) {
-      error_count = 0;
-      tools::logger()->warn("[Gimbal] Too many errors, attempting to reconnect...");
-      reconnect();
+    if (!serial_.ensure_open()) {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        mode_ = GimbalMode::IDLE;
+        state_ = {};
+        last_feedback_generation_ = 0;
+      }
+      queue_.clear();
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
+    }
+    if (active_generation != serial_.generation()) {
+      active_generation = serial_.generation();
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        mode_ = GimbalMode::IDLE;
+        state_ = {};
+        last_feedback_generation_ = 0;
+      }
+      queue_.clear();
     }
 
     uint8_t head_byte[2];
@@ -183,7 +207,6 @@ void Gimbal::read_thread()
       if (!read(
             reinterpret_cast<uint8_t *>(&rx_pkt) + sizeof(rx_pkt.head),
             sizeof(rx_pkt) - sizeof(rx_pkt.head))) {
-        error_count++;
         continue;
       }
       auto crc16_passed = tools::check_crc16(reinterpret_cast<uint8_t *>(&rx_pkt), sizeof(rx_pkt));
@@ -196,7 +219,6 @@ void Gimbal::read_thread()
         continue;
       }
 
-      error_count = 0;
       // Eigen::Quaterniond q(rx_pkt.q[0], rx_pkt.q[1], rx_pkt.q[2], rx_pkt.q[3]);
       // queue_.push({q, t});
              // Process Quaternion from yaw and pitch (roll = 0)
@@ -221,7 +243,8 @@ void Gimbal::read_thread()
       }
       {
         std::lock_guard<std::mutex> lock(mutex_);
-
+        last_feedback_ = std::chrono::steady_clock::now();
+        last_feedback_generation_ = active_generation;
         state_.yaw = rx_pkt.yaw;
         state_.yaw_vel = rx_pkt.yaw_vel;
         state_.pitch = rx_pkt.pitch;
@@ -264,7 +287,6 @@ void Gimbal::read_thread()
       // ---- Referee system packet (0xA5 header) ----
       uint8_t header[4];  // length(2), seq(1), crc8(1)
       if (!read(header, 4)) {
-        error_count++;
         continue;
       }
 
@@ -279,7 +301,6 @@ void Gimbal::read_thread()
 
       uint8_t cmd_buff[2];
       if (!read(cmd_buff, 2)) {
-        error_count++;
         continue;
       }
       uint16_t cmd_id = *reinterpret_cast<uint16_t *>(cmd_buff);
@@ -287,14 +308,12 @@ void Gimbal::read_thread()
       std::vector<uint8_t> data_buff(data_len);
       if (data_len > 0) {
         if (!read(data_buff.data(), data_len)) {
-          error_count++;
-          continue;
+            continue;
         }
       }
 
       uint8_t tail[2];  // CRC16
       if (!read(tail, 2)) {
-        error_count++;
         continue;
       }
 
@@ -312,36 +331,11 @@ void Gimbal::read_thread()
         tools::logger()->debug("[Gimbal] Full packet CRC16 check failed for referee packet.");
         continue;
       }
-      error_count = 0;
       parse_referee_data(cmd_id, data_buff.data(), data_len);
     }
   }
   tools::logger()->info("[Gimbal] read_thread stopped.");
 }
-
-void Gimbal::reconnect()
-{
-  int max_retry_count = 10;
-  for (int i = 0; i < max_retry_count && !quit_; ++i) {
-    tools::logger()->warn("[Gimbal] Reconnecting serial, attempt {}/{}...", i + 1, max_retry_count);
-    try {
-      serial_.close();
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    } catch (...) {
-    }
-
-    try {
-      serial_.open();  // 尝试重新打开
-      queue_.clear();
-      tools::logger()->info("[Gimbal] Reconnected serial successfully.");
-      break;
-    } catch (const std::exception & e) {
-      tools::logger()->warn("[Gimbal] Reconnect failed: {}", e.what());
-      std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-  }
-}
-
 
 void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t len)
 {
@@ -366,12 +360,8 @@ void Gimbal::parse_referee_data(uint16_t cmd_id, const uint8_t* data, uint16_t l
   }
 }
 
-void Gimbal::send_gimbal_data() const {
-  try {
-    const_cast<serial::Serial &>(serial_).write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
-  } catch (const std::exception & e) {
-    tools::logger()->warn("[Gimbal] Failed to write serial: {}", e.what());
-  }
+void Gimbal::send_gimbal_data() {
+  serial_.write(reinterpret_cast<const uint8_t *>(&tx_data_gimbal), sizeof(tx_data_gimbal));
   if (after_send_gimbal_data_) {
     after_send_gimbal_data_();
   }

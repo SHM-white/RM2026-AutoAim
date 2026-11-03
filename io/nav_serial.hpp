@@ -4,7 +4,7 @@
 #include <string>
 
 #include "io/vision_protocol.hpp"
-#include "serial/serial.h"
+#include "io/reconnecting_serial.hpp"
 
 namespace io
 {
@@ -17,7 +17,7 @@ public:
   bool send(const NavData & command);
 
 private:
-  serial::Serial serial_;
+  ReconnectingSerial serial_;
   std::mutex tx_mutex_;
 };
 }  // namespace io
