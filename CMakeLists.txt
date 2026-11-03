@@ -16,8 +16,12 @@ find_package(Eigen3 REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(nlohmann_json REQUIRED)
-set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/")
-find_package(OpenVINO REQUIRED)
+# Honor OpenVINO_DIR/CMAKE_PREFIX_PATH from the build environment.
+# Retain the historical default only when it exists.
+if(NOT OpenVINO_DIR AND EXISTS "/opt/intel/openvino_2024.6.0/runtime/cmake")
+  set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake")
+endif()
+find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 set(FASTCDR_DIR "/opt/ros/humble/lib/cmake/fastcdr/")
 find_package(fastcdr QUIET)
 
