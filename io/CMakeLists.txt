@@ -10,12 +10,10 @@ add_library(io STATIC
     mindvision/mindvision.cpp  
     usbcamera/usbcamera.cpp  
     camera.cpp
-    cboard.cpp
-    dm_imu/dm_imu.cpp
+     dm_imu/dm_imu.cpp
     gimbal/gimbal.cpp
     nav_serial.cpp
-    cboard_uart.cpp
-)
+ )
 
 # hikrobot
 target_include_directories(io PUBLIC hikrobot/include)
@@ -35,6 +33,11 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
   target_link_directories(io PUBLIC mindvision/lib/arm64)
 else()
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
+endif()
+
+# Legacy C-board CAN is not part of the 2027 production runtime.
+if(ENABLE_LEGACY_CBOARD)
+  target_sources(io PRIVATE cboard.cpp cboard_uart.cpp)
 endif()
 
 target_link_libraries(io PUBLIC MvCameraControl MVSDK usb-1.0 yaml-cpp serial)

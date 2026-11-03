@@ -20,9 +20,12 @@ add_library(auto_aim OBJECT
     yolos/yolov5.cpp
     yolos/yolov8.cpp
     yolos/yolo11.cpp
-    multithread/commandgener.cpp
     multithread/mt_detector.cpp
     planner/planner.cpp
 )
+
+if(ENABLE_LEGACY_CBOARD)
+  target_sources(auto_aim PRIVATE multithread/commandgener.cpp)
+endif()
 
 target_link_libraries(auto_aim io openvino::runtime tinympcstatic)

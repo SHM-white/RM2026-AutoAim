@@ -1,6 +1,9 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
+#include <optional>
+#include <tuple>
 #include <mutex>
 #include <utility>
 
