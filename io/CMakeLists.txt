@@ -10,10 +10,10 @@ add_library(io STATIC
     mindvision/mindvision.cpp  
     usbcamera/usbcamera.cpp  
     camera.cpp
-     dm_imu/dm_imu.cpp
+    dm_imu/dm_imu.cpp
     gimbal/gimbal.cpp
     nav_serial.cpp
- )
+)
 
 # hikrobot
 target_include_directories(io PUBLIC hikrobot/include)

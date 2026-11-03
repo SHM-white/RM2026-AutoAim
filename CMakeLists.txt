@@ -233,7 +233,6 @@ if(BUILD_TESTING)
     target_link_libraries(armor_geometry_contract_test PRIVATE ${OpenCV_LIBS})
     add_test(NAME armor_geometry_contract COMMAND armor_geometry_contract_test)
 
-    add_executable(nav_protocol_contract_test tests/nav_protocol_contract_test.cpp)
-    target_link_libraries(nav_protocol_contract_test PRIVATE tools)
+    add_executable(nav_protocol_contract_test tests/nav_protocol_contract_test.cpp tools/crc.cpp)
     add_test(NAME nav_protocol_contract COMMAND nav_protocol_contract_test)
 endif()
