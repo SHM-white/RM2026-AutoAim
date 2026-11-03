@@ -29,7 +29,6 @@ public:
   std::vector<cv::Point2f> world2pixel(const std::vector<cv::Point3f> & worldPoints);
 
 private:
-  std::vector<cv::Point3f> big_armor_points_, small_armor_points_;
   cv::Mat camera_matrix_;
   cv::Mat distort_coeffs_;
   Eigen::Matrix3d R_gimbal2imubody_;
