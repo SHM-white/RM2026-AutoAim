@@ -10,71 +10,17 @@
 #include <thread>
 #include <tuple>
 #include <optional>
+#include <vector>
 
 #include "serial/serial.h"
 #include "tools/thread_safe_queue.hpp"
 #include "io/command.hpp"
+#include "io/vision_protocol.hpp"
 #include "io/dm_imu/dm_imu.hpp"
 
 
 namespace io
 {
-constexpr uint8_t gimbal_struct_header[2] = {'A', 'B'};
-constexpr uint8_t nav_struct_header[2] = {'C', 'D'};
-using RefereeCallback = std::function<void(uint16_t cmd_id, const uint8_t* data, uint16_t len)>;
-
-#pragma pack(push, 1)
-struct NavData
-{
-  uint8_t head[2] = {nav_struct_header[0], nav_struct_header[1]};
-  uint8_t mode;  // 0：正常， 1：小陀螺
-  uint8_t empty1;
-  uint8_t empty2;
-  double linear_x;
-  double linear_y;
-  double linear_z;
-  double angular_x;
-  double angular_y;
-  double angular_z;
-  uint16_t crc16;
-};
-#pragma pack(pop)
-static_assert(sizeof(NavData) <= 64);
-
-#pragma pack(push, 1)
-struct GimbalToVision
-{
-  uint8_t head[2] = {gimbal_struct_header[0], gimbal_struct_header[1]};
-  uint8_t mode;  // 0: 空闲, 1: 自瞄, 2: 小符, 3: 大符
-  float q[4];    // wxyz顺序
-  float yaw;
-  float yaw_vel;
-  float pitch;
-  float pitch_vel;
-  float bullet_speed;
-  uint16_t bullet_count;  // 子弹累计发送次数
-  uint16_t crc16;
-};
-#pragma pack(pop)
-static_assert(sizeof(GimbalToVision) <= 64);
-
-#pragma pack(push, 1)
-struct VisionToGimbal
-{
-  const int8_t head[2] = {gimbal_struct_header[0], gimbal_struct_header[1]};
-  uint8_t mode;  // 0: 不控制, 1: 控制云台但不开火，2: 控制云台且开火
-  float yaw;
-  float yaw_vel;
-  float yaw_acc;
-  float pitch;
-  float pitch_vel;
-  float pitch_acc;
-  uint16_t crc16;
-};
-#pragma pack(pop)
-
-static_assert(sizeof(VisionToGimbal) <= 64);
-
 enum class GimbalMode
 {
   IDLE,        // 空闲
@@ -117,7 +63,6 @@ public:
 
   void send(const io::Command & cmd);
   void send(io::VisionToGimbal VisionToGimbal);
-  void send_cmd_vel(const std::optional<const NavData> & nav_data);
   void send_imu_forward(const DM_IMU & imu) const;
 
 private:
@@ -128,7 +73,6 @@ private:
   mutable std::mutex mutex_;
 
   VisionToGimbal tx_data_gimbal;
-  NavData tx_data_nav;
 
   GimbalMode mode_ = GimbalMode::IDLE;
   GimbalState state_;

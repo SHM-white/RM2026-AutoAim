@@ -123,26 +123,6 @@ void Gimbal::send(
   send_gimbal_data();
 }
 
-void Gimbal::send_cmd_vel(const std::optional<const NavData> & nav_data)
-{
-  if (!nav_data.has_value()) return;
-
-  tx_data_nav.linear_x = nav_data->linear_x;
-  tx_data_nav.linear_y = nav_data->linear_y;
-  tx_data_nav.linear_z = nav_data->linear_z;
-  tx_data_nav.angular_x = nav_data->angular_x;
-  tx_data_nav.angular_y = nav_data->angular_y;
-  tx_data_nav.angular_z = nav_data->angular_z;
-  tx_data_nav.crc16 = tools::get_crc16(
-    reinterpret_cast<uint8_t *>(&tx_data_nav), sizeof(tx_data_nav) - sizeof(tx_data_nav.crc16));
-
-  try {
-    serial_.write(reinterpret_cast<uint8_t *>(&tx_data_nav), sizeof(tx_data_nav));
-  } catch (const std::exception & e) {
-    tools::logger()->warn("[GimbalWithNav] Failed to write serial: {}", e.what());
-  }
-}
-
 void Gimbal::send_imu_forward(const DM_IMU & imu) const {
   imu.forward_data(serial_);
 }

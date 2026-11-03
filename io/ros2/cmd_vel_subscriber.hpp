@@ -8,7 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "tools/crc.hpp"
 #include "tools/thread_safe_queue.hpp"
-#include "io/gimbal/gimbal.hpp"
+#include "io/vision_protocol.hpp"
 
 namespace io
 {

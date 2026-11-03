@@ -79,6 +79,8 @@ can_interface: "can0"
 
 #####-----gimbal参数-----#####
 # com_port: "/dev/ttyUSB0"
+# Set to the actual dedicated navigation UART before running the sentry.
+nav_com_port: "/dev/ttyUSB1"
 com_port: "/dev/ttyUSB0"
 yaw_kp: 0
 yaw_kd: 0
