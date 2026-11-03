@@ -25,6 +25,13 @@ public:
                      std::string label = "serial")
   : port_(std::move(port)), label_(std::move(label))
   {
+    if (port_.rfind("/dev/ttyUSB", 0) == 0 ||
+        port_.rfind("/dev/ttyACM", 0) == 0) {
+      std::fprintf(stderr,
+                   "[%s] WARNING: %s is a dynamic Linux tty name. "
+                   "Use /dev/serial/by-id, /dev/serial/by-path or a udev alias.\n",
+                   label_.c_str(), port_.c_str());
+    }
     serial_.setPort(port_);
     serial_.setBaudrate(baudrate);
     auto timeout = serial::Timeout::simpleTimeout(timeout_ms);

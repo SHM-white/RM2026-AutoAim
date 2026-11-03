@@ -24,9 +24,11 @@ int main()
   assert(mkdtemp(directory) != nullptr);
   const std::string alias = std::string(directory) + "/gimbal";
   Pty old_port = new_terminal();
-  assert(symlink(old_port.path, alias.c_str()) == 0);
   {
     io::ReconnectingSerial link(alias, 115200, 50, "test");
+    assert(!link.ensure_open()); // initially unplugged: non-fatal
+    assert(symlink(old_port.path, alias.c_str()) == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
     assert(link.ensure_open());
     const auto previous_generation = link.generation();
     uint8_t out[] = {'A', 'B'};

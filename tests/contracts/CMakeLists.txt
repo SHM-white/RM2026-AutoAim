@@ -4,6 +4,10 @@ project(vision_contract_tests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 find_package(OpenCV REQUIRED COMPONENTS core)
 find_package(Eigen3 REQUIRED)
+find_package(fmt REQUIRED)
+find_package(spdlog REQUIRED)
+find_package(yaml-cpp REQUIRED)
+find_package(nlohmann_json REQUIRED)
 
 enable_testing()
 
@@ -23,4 +27,17 @@ if(UNIX AND NOT APPLE)
   target_include_directories(serial_hotplug_contract_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../..)
   target_link_libraries(serial_hotplug_contract_test PRIVATE serial util)
   add_test(NAME serial_hotplug_contract COMMAND serial_hotplug_contract_test)
+
+  # Compile the real runtime UART owners on x86 Linux too. This catches
+  # interface/ABI regressions without requiring a Jetson, MCU, or camera.
+  add_library(serial_runtime_compile OBJECT
+    ../../io/gimbal/gimbal.cpp
+    ../../io/dm_imu/dm_imu.cpp
+    ../../io/nav_serial.cpp
+  )
+  target_include_directories(serial_runtime_compile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+  target_link_libraries(serial_runtime_compile PRIVATE
+    serial Eigen3::Eigen yaml-cpp fmt::fmt spdlog::spdlog nlohmann_json::nlohmann_json)
+
 endif()
