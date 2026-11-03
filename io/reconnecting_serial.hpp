@@ -27,7 +27,8 @@ public:
   {
     serial_.setPort(port_);
     serial_.setBaudrate(baudrate);
-    serial_.setTimeout(serial::Timeout::simpleTimeout(timeout_ms));
+    auto timeout = serial::Timeout::simpleTimeout(timeout_ms);
+    serial_.setTimeout(timeout);
   }
 
   ~ReconnectingSerial() { close(); }
