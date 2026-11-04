@@ -11,7 +11,6 @@
 #include "tools/math_tools.hpp"
 #include "tools/plotter.hpp"
 #include "io/gimbal/gimbal.hpp"
-#include "io/nav_serial.hpp"
 #include "io/ros2/ros2.hpp"
 
 #define USE_MPC 0
@@ -95,7 +94,6 @@ int main(int argc, char * argv[])
   // // Initialize CBoardUART
   // io::CBoardUART cboard(config_path);
   io::Gimbal gimbal(config_path);
-  io::NavSerial nav(config_path);
   io::ROS2 ros{};
 
   std::cout << "Waiting for gimbal to zero..." << std::endl;
@@ -203,7 +201,7 @@ int main(int argc, char * argv[])
     // Send command
     gimbal.send(command.control, command.shoot, command.yaw, yaw_vel, yaw_acc, command.pitch, pitch_vel, pitch_acc);
     auto nav_data = ros.get_last_cmd_vel_data();
-    if (nav_data) nav.send(*nav_data);
+    gimbal.send_cmd_vel(nav_data);
     gimbal.send_imu_forward(imu);
 
      // Plot nav data

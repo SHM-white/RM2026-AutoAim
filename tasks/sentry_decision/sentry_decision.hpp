@@ -7,7 +7,7 @@
 #include <cstring>
 #include <atomic>
 
-#include "io/vision_protocol.hpp"
+#include "io/cboard.hpp"
 #include "io/ros2/ros2.hpp"
 #include "io/dm_imu/dm_imu.hpp"
 

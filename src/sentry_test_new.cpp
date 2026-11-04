@@ -8,7 +8,6 @@
 
 #include "io/camera.hpp"
 #include "io/gimbal/gimbal.hpp"
-#include "io/nav_serial.hpp"
 #include "io/ros2/ros2.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
@@ -42,7 +41,6 @@ int main(int argc, char * argv[])
 
   io::ROS2 ros2;
   io::Gimbal gimbal(config_path);
-  io::NavSerial nav(config_path);
   io::Camera camera(config_path);
 
   auto_aim::YOLO yolo(config_path, true);
@@ -79,7 +77,7 @@ int main(int argc, char * argv[])
       // 在向云台发送控制指令后尝试获取导航目标数据并发送（如果为空就不发送）
       auto nav_data = ros2.get_last_cmd_vel_data();
       if (nav_data.has_value()) {
-        nav.send(*nav_data);
+        gimbal.send_cmd_vel(nav_data);
       }
 
       nlohmann::json data;

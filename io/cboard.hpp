@@ -9,13 +9,32 @@
 #include <vector>
 
 #include "io/command.hpp"
-#include "io/control_modes.hpp"
 #include "io/socketcan.hpp"
 #include "tools/logger.hpp"
 #include "tools/thread_safe_queue.hpp"
 
 namespace io
 {
+enum Mode
+{
+  idle,
+  auto_aim,
+  small_buff,
+  big_buff,
+  outpost
+};
+const std::vector<std::string> MODES = {"idle", "auto_aim", "small_buff", "big_buff", "outpost"};
+
+// 哨兵专有
+// 双头哨兵，我们不需要
+enum ShootMode
+{
+  left_shoot,
+  right_shoot,
+  both_shoot
+};
+const std::vector<std::string> SHOOT_MODES = {"left_shoot", "right_shoot", "both_shoot"};
+
 class CBoard
 {
 public:

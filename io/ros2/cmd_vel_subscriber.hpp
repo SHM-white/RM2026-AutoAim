@@ -1,9 +1,6 @@
 #pragma once
 
-#include <chrono>
 #include <functional>
-#include <optional>
-#include <tuple>
 #include <mutex>
 #include <utility>
 
@@ -11,7 +8,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "tools/crc.hpp"
 #include "tools/thread_safe_queue.hpp"
-#include "io/vision_protocol.hpp"
+#include "io/gimbal/gimbal.hpp"
 
 namespace io
 {

@@ -6,7 +6,7 @@
 #include <thread>
 
 #include "io/camera.hpp"
-#include "io/nav_serial.hpp"
+#include "io/cboard.hpp"
 #include "io/ros2/publish2nav.hpp"
 #include "io/ros2/ros2.hpp"
 #include "io/usbcamera/usbcamera.hpp"
@@ -51,7 +51,6 @@ int main(int argc, char * argv[])
   io::Gimbal gimbal(config_path, nullptr, [&](uint16_t cmd_id, const uint8_t* data, uint16_t len){
     decider_sentry.referee_callback(cmd_id, data, len);
   }, nullptr);
-  io::NavSerial nav(config_path);  // independent navigation UART
   io::Camera camera(config_path);
   io::DM_IMU dm_imu{};
   // io::Camera back_camera("configs/camera.yaml");
@@ -147,7 +146,8 @@ int main(int argc, char * argv[])
 #endif
 
     gimbal.send(command);
-    nav.send(nav_data);
+    gimbal.send_imu_forward(dm_imu);
+    gimbal.send_cmd_vel(nav_data);
 #ifndef NDEBUG
     nlohmann::json json;
     json["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
