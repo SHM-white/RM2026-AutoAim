@@ -2,6 +2,10 @@
 
 #include <atomic>
 #include <chrono>
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <string>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
@@ -14,63 +18,81 @@
 
 namespace io
 {
-DM_IMU::DM_IMU(QTransform q_transform) : queue_(5000), q_transform_(q_transform)
+namespace
 {
-  init_serial();
+std::string imu_port(const std::string & explicit_port)
+{
+  if (!explicit_port.empty()) return explicit_port;
+  const char * env_port = std::getenv("SKYWALKER_IMU_PORT");
+  return (env_port && *env_port) ? std::string(env_port) : "/dev/ttyACM0";
+}
+}  // namespace
+
+DM_IMU::DM_IMU(QTransform q_transform, const std::string & port)
+: serial_(imu_port(port), 921600, 30, "DM_IMU"),
+  queue_(5000), q_transform_(std::move(q_transform))
+{
+  // Do not block construction on missing hardware.
   rec_thread_ = std::thread(&DM_IMU::get_imu_data_thread, this);
-  queue_.pop(data_ahead_);
-  queue_.pop(data_behind_);
-  tools::logger()->info("[DM_IMU] initialized");
+  tools::logger()->info("[DM_IMU] background reconnect enabled");
 }
 
 DM_IMU::~DM_IMU()
 {
   stop_thread_ = true;
-  if (rec_thread_.joinable()) {
-    rec_thread_.join();
-  }
-  send_command(IMU_COMMAND::RESTART);
-  if (serial_.isOpen()) {
-    serial_.close();
-  }
+  if (rec_thread_.joinable()) rec_thread_.join();
+  // Never issue a reboot command during unplug/normal shutdown.
+  serial_.close();
 }
 
-void DM_IMU::init_serial()
+bool DM_IMU::connected() const
 {
-  try {
-    serial_.setPort("/dev/ttyACM0");
-    serial_.setBaudrate(921600);
-    serial_.setFlowcontrol(serial::flowcontrol_none);
-    serial_.setParity(serial::parity_none);  //default is parity_none
-    serial_.setStopbits(serial::stopbits_one);
-    serial_.setBytesize(serial::eightbits);
-    serial::Timeout time_out = serial::Timeout::simpleTimeout(20);
-    serial_.setTimeout(time_out);
-    serial_.open();
-    send_command(IMU_COMMAND::ZERO_ANGLE);
-    send_command(IMU_COMMAND::ENTER_SET_MODE);
-    send_command(IMU_COMMAND::ENABLE_TEMP_CONTROL);
-    send_command(IMU_COMMAND::SET_TEMP, 25);
-    send_command(IMU_COMMAND::ENTER_NORMAL_MODE);
-    // send_command(IMU_COMMAND::ZERO_ANGLE);
-    usleep(1000000);  //1s
+  if (!serial_.connected()) return false;
+  const auto generation = serial_.generation();
+  std::lock_guard<std::mutex> lock(feedback_mutex_);
+  return last_packet_generation_ == generation &&
+         last_valid_packet_ != std::chrono::steady_clock::time_point{} &&
+         std::chrono::steady_clock::now() - last_valid_packet_ <
+           std::chrono::milliseconds(500);
+}
 
-    tools::logger()->info("[DM_IMU] serial port opened");
-  }
+bool DM_IMU::init_serial()
+{
+  if (!serial_.ensure_open()) return false;
+  const auto generation = serial_.generation();
+  if (generation == configured_generation_) return true;
 
-  catch (serial::IOException & e) {
-    tools::logger()->warn("[DM_IMU] failed to open serial port ");
-    exit(0);
+  // Replay setup only on a new connection. Zeroing during a live reconnect
+  // would abruptly shift the robot's reference frame, so only do it at boot.
+  if (!was_initialized_ && !write_command(IMU_COMMAND::ZERO_ANGLE, std::nullopt)) return false;
+  if (!write_command(IMU_COMMAND::ENTER_SET_MODE, std::nullopt)) return false;
+  if (!write_command(IMU_COMMAND::ENABLE_TEMP_CONTROL, std::nullopt)) return false;
+  if (!write_command(IMU_COMMAND::SET_TEMP, 25)) return false;
+  if (!write_command(IMU_COMMAND::ENTER_NORMAL_MODE, std::nullopt)) return false;
+
+  was_initialized_ = true;
+  configured_generation_ = generation;
+  queue_.clear();
+  {
+    std::lock_guard<std::mutex> lock(feedback_mutex_);
+    last_packet_generation_ = 0;
   }
+  tools::logger()->info("[DM_IMU] initialized UART generation {}", generation);
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  return true;
 }
 
 void DM_IMU::get_imu_data_thread()
 {
   uint8_t header[4];
   while (!stop_thread_) {
-    if (!serial_.isOpen()) {
-      tools::logger()->warn("In get_imu_data_thread,imu serial port unopen");
-      std::this_thread::sleep_for(std::chrono::seconds(1));
+    if (!init_serial()) {
+      {
+        std::lock_guard<std::mutex> lock(feedback_mutex_);
+        last_packet_generation_ = 0;
+      }
+      queue_.clear();
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
       continue;
     }
 
@@ -108,12 +130,19 @@ void DM_IMU::get_imu_data_thread()
         temp_data.gyroy = *((float *)(&receive_data.gyroy_u32));
         temp_data.gyroz = *((float *)(&receive_data.gyroz_u32));
       }
-      if (tools::get_imu_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3) {
+      const bool euler_valid =
+        tools::get_imu_crc16((uint8_t *)(&receive_data.FrameHeader3), 16) == receive_data.crc3;
+      if (euler_valid) {
         temp_data.roll = *((float *)(&receive_data.roll_u32));
         temp_data.pitch = *((float *)(&receive_data.pitch_u32));
         temp_data.yaw = *((float *)(&receive_data.yaw_u32));
       }
       
+      if (!euler_valid || !std::isfinite(temp_data.yaw) ||
+          !std::isfinite(temp_data.pitch) || !std::isfinite(temp_data.roll) ||
+          !serial_.connected() || serial_.generation() != configured_generation_)
+        continue;
+
       uint8_t next_idx = 1 - current_idx;
       data_buffer_[next_idx] = temp_data;
       data_idx_.store(next_idx, std::memory_order_release);
@@ -126,6 +155,11 @@ void DM_IMU::get_imu_data_thread()
       q = q_transform_(q);
       q.normalize();
       queue_.push({q, timestamp});
+      {
+        std::lock_guard<std::mutex> lock(feedback_mutex_);
+        last_valid_packet_ = timestamp;
+        last_packet_generation_ = configured_generation_;
+      }
     } catch (const std::exception & e) { 
       tools::logger()->error("[DM_IMU] error: {}", e.what());
       std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -135,27 +169,23 @@ void DM_IMU::get_imu_data_thread()
 
 Eigen::Quaterniond DM_IMU::imu_at(std::chrono::steady_clock::time_point timestamp)
 {
-  if (data_behind_.timestamp <= timestamp) {
-    while (true) {
-      data_ahead_ = data_behind_;
-      queue_.pop(data_behind_);
-      if (data_behind_.timestamp > timestamp) break;
+  if (!connected()) return Eigen::Quaterniond::Identity();
+  std::lock_guard<std::mutex> lock(interpolation_mutex_);
+  IMUData a{}, b{};
+  if (!queue_.try_front(b)) return Eigen::Quaterniond::Identity();
+  if (timestamp <= b.timestamp) return b.q.normalized();
+
+  while (queue_.try_pop_if_more_than_one(a)) {
+    if (!queue_.try_front(b)) return a.q.normalized();
+    if (timestamp <= b.timestamp) {
+      const double duration = std::chrono::duration<double>(b.timestamp - a.timestamp).count();
+      if (duration <= 0.0) return b.q.normalized();
+      const double k = std::clamp(
+        std::chrono::duration<double>(timestamp - a.timestamp).count() / duration, 0.0, 1.0);
+      return a.q.slerp(k, b.q).normalized();
     }
   }
-
-  Eigen::Quaterniond q_a = data_ahead_.q.normalized();
-  Eigen::Quaterniond q_b = data_behind_.q.normalized();
-  auto t_a = data_ahead_.timestamp;
-  auto t_b = data_behind_.timestamp;
-  auto t_c = timestamp;
-  std::chrono::duration<double> t_ab = t_b - t_a;
-  std::chrono::duration<double> t_ac = t_c - t_a;
-
-  // 四元数插值
-  auto k = t_ac / t_ab;
-  Eigen::Quaterniond q_c = q_a.slerp(k, q_b).normalized();
-
-  return q_c;
+  return b.q.normalized();
 }
 
 IMU_Data DM_IMU::current_data() const {
@@ -163,19 +193,22 @@ IMU_Data DM_IMU::current_data() const {
   return data_buffer_[read_idx]; 
 }
 
-void DM_IMU::send_command(IMU_COMMAND command, std::optional<uint8_t> param) {
-  uint8_t cmd_buffer[4] = {0xAA, 0x00, 0x00, 0x0D};  // 基础命令格式
-  
-  uint16_t cmd_val = static_cast<uint16_t>(command);
-  cmd_buffer[1] = (cmd_val >> 8) & 0xFF;
-  cmd_buffer[2] = (cmd_val & 0xFF) | param.value_or(0);
-  
-  if (serial_.isOpen()) {
-    serial_.write(cmd_buffer, 4);
-  }
+bool DM_IMU::write_command(IMU_COMMAND command, std::optional<uint8_t> param)
+{
+  uint8_t bytes[4] = {0xAA, 0x00, 0x00, 0x0D};
+  const uint16_t value = static_cast<uint16_t>(command);
+  bytes[1] = (value >> 8) & 0xFF;
+  bytes[2] = (value & 0xFF) | param.value_or(0);
+  return serial_.write(bytes, sizeof(bytes));
+}
+
+void DM_IMU::send_command(IMU_COMMAND command, std::optional<uint8_t> param)
+{
+  write_command(command, param);
 }
 
 void DM_IMU::forward_data(const serial::Serial & serial) const {
+  if (!connected()) return;
   IMU_Forward_Frame forward_frame;
   // 直接从当前最新的索引中读取数据，无需加锁，不阻塞写入线程
   uint8_t read_idx = data_idx_.load(std::memory_order_acquire);

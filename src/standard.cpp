@@ -79,7 +79,7 @@ int main(int argc, char * argv[])
     auto command = aimer.aim(targets, t, gimbal.state().bullet_speed);
 
     gimbal.send(command.control, command.shoot, command.yaw, 0, 0, command.pitch, 0, 0);
-    gimbal.send_imu_forward(dm_imu);
+    if (dm_imu.connected()) gimbal.send_imu_forward(dm_imu);
   }
 
   return 0;

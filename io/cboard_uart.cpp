@@ -182,7 +182,7 @@ void CBoardUART::read_thread()
           //plot_json["bullet_speed"] = pkt->bullet_speed;
           plotter.plot(plot_json);
 #endif
-         if ((cal_crc == pkt->crc16) || true) {
+         if (cal_crc == pkt->crc16) {
              auto timestamp = std::chrono::steady_clock::now();
              
              // Process Quaternion from yaw and pitch (roll = 0)

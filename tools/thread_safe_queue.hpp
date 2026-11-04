@@ -62,6 +62,24 @@ public:
     return std::move(value);
   }
 
+  // Read live telemetry without indefinitely waiting for another sample.
+  bool try_front(T & value) const
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (queue_.empty()) return false;
+    value = queue_.front();
+    return true;
+  }
+
+  bool try_pop_if_more_than_one(T & value)
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (queue_.size() < 2) return false;
+    value = std::move(queue_.front());
+    queue_.pop();
+    return true;
+  }
+
   T front()
   {
     std::unique_lock<std::mutex> lock(mutex_);

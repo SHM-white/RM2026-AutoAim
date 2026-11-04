@@ -3,31 +3,16 @@
 #include <yaml-cpp/yaml.h>
 
 #include <vector>
+#include <stdexcept>
 
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
 
 namespace auto_aim
 {
-constexpr double LIGHTBAR_LENGTH = 56e-3;     // m
-constexpr double BIG_ARMOR_WIDTH = 230e-3;    // m
-constexpr double SMALL_ARMOR_WIDTH = 135e-3;  // m
-
-const std::vector<cv::Point3f> BIG_ARMOR_POINTS{
-  {0, BIG_ARMOR_WIDTH / 2, LIGHTBAR_LENGTH / 2},
-  {0, -BIG_ARMOR_WIDTH / 2, LIGHTBAR_LENGTH / 2},
-  {0, -BIG_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2},
-  {0, BIG_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2}};
-const std::vector<cv::Point3f> SMALL_ARMOR_POINTS{
-  {0, SMALL_ARMOR_WIDTH / 2, LIGHTBAR_LENGTH / 2},
-  {0, -SMALL_ARMOR_WIDTH / 2, LIGHTBAR_LENGTH / 2},
-  {0, -SMALL_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2},
-  {0, SMALL_ARMOR_WIDTH / 2, -LIGHTBAR_LENGTH / 2}};
-
 Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3d::Identity())
 {
   auto yaml = YAML::LoadFile(config_path);
-
   auto R_gimbal2imubody_data = yaml["R_gimbal2imubody"].as<std::vector<double>>();
   auto R_camera2gimbal_data = yaml["R_camera2gimbal"].as<std::vector<double>>();
   auto t_camera2gimbal_data = yaml["t_camera2gimbal"].as<std::vector<double>>();
@@ -51,11 +36,13 @@ void Solver::set_R_gimbal2world(const Eigen::Quaterniond & q)
   R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
 }
 
-//solvePnP（获得姿态）
+// PnP requires four real, ordered correspondences for this geometry.
 void Solver::solve(Armor & armor) const
 {
+  if (armor.points.size() != 4)
+    throw std::invalid_argument("PnP requires four observed physical corner/keypoint locations");
   const auto & object_points =
-    (armor.type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+    armor_object_points(armor.type, armor.name);
 
   cv::Vec3d rvec, tvec;
   cv::solvePnP(
@@ -121,7 +108,7 @@ std::vector<cv::Point2f> Solver::reproject_armor(
 
   // reproject
   std::vector<cv::Point2f> image_points;
-  const auto & object_points = (type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+  const auto & object_points = armor_object_points(type, name);
   cv::projectPoints(object_points, rvec, tvec, camera_matrix_, distort_coeffs_, image_points);
   return image_points;
 }
@@ -130,7 +117,7 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
 {
   // solve
   const auto & object_points =
-    (armor.type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
+    armor_object_points(armor.type, armor.name);
 
   cv::Vec3d rvec, tvec;
   cv::solvePnP(

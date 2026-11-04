@@ -152,7 +152,15 @@ void Serial::SerialImpl::open()
     }
   }
 
-  reconfigurePort();
+  try {
+    reconfigurePort();
+  } catch (...) {
+    // ttyUSB/ttyACM may disappear between open() and termios setup.
+    // The old implementation leaked fd_ because is_open_ was still false.
+    ::close(fd_);
+    fd_ = -1;
+    throw;
+  }
   is_open_ = true;
 }
 
